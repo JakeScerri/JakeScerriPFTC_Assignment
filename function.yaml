@@ -1,0 +1,2 @@
+runtime: dotnet6
+entry_point: JakeScerriPFTC_Assignment.CloudFunction.TicketProcessorFunction
