@@ -1,0 +1,30 @@
+﻿@using System.Security.Claims
+@{
+    ViewData["Title"] = "User Area";
+}
+
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h2>User Area</h2>
+        </div>
+        <div class="card-body">
+            <p>This area is accessible to all authenticated users (both regular users and technicians).</p>
+            
+            <hr>
+            
+            <h4>My Information</h4>
+            <p>Email: @User.FindFirstValue(ClaimTypes.Email)</p>
+            <p>Role: @User.FindFirstValue(ClaimTypes.Role)</p>
+            
+            <hr>
+            
+            <h4>My Tickets</h4>
+            <p>This would display a list of tickets submitted by the current user.</p>
+            
+            <div id="userAreaResult" class="mt-3"></div>
+            
+            <a href="/" class="btn btn-secondary mt-3">Back to Home</a>
+        </div>
+    </div>
+</div>

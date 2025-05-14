@@ -1,0 +1,77 @@
+﻿@using System.Security.Claims
+@{
+    ViewData["Title"] = "Home Page";
+}
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            @if (User.Identity?.IsAuthenticated == true)
+            {
+                <div class="alert alert-success mb-4">
+                    Welcome, @User.FindFirst(ClaimTypes.Email)?.Value!
+                    <a href="/api/auth/logout" class="btn btn-sm btn-outline-dark float-end">Logout</a>
+                </div>
+
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h2 class="mb-0">Report an IT Issue</h2>
+                    </div>
+                    <div class="card-body">
+                        <form id="ticketForm" enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <label for="title" class="form-label">Issue Title</label>
+                                <input type="text" class="form-control" id="title" name="title" required placeholder="E.g., Email not syncing">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="description" class="form-label">Description</label>
+                                <textarea class="form-control" id="description" name="description" rows="4" required placeholder="Please describe your issue in detail..."></textarea>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="priority" class="form-label">Priority</label>
+                                <select class="form-control" id="priority" name="priority">
+                                    <option value="0">High</option>
+                                    <option value="1" selected>Medium</option>
+                                    <option value="2">Low</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="screenshots" class="form-label">Screenshots (Optional)</label>
+                                <input type="file" class="form-control" id="screenshots" name="screenshots" multiple accept="image/*">
+                                
+                                <div class="progress mt-2 d-none">
+                                    <div id="uploadProgress" class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary" id="submitButton">Submit Ticket</button>
+                        </form>
+                        
+                        <div id="submitResult" class="alert mt-3 d-none"></div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h2 class="mb-0">IT Support Portal</h2>
+                    </div>
+                    <div class="card-body text-center">
+                        <p class="lead">Please log in to report an IT issue.</p>
+                        <a href="/api/auth/login" class="btn btn-primary btn-lg">
+                            Login with Google
+                        </a>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/site.js"></script>
+}

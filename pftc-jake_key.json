@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "pftc-jake",
+  "private_key_id": "5062ad244ae59ca2b1565ca40d8307abb1c6f243",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQCWNtYIOLkNy422\nsdhYdQkGWUYO34gkZIG0HbBXf6LiDHHgmgVvW6OQnvS8JhVJHzSHPD2DHL4PfDKz\nTogEjJb1Ek5QytQDnfipDjVb+qwjYG4Nd7uYUXFxJztOFTieCMYwwUXRa7/JO/s3\n4mhTsL2Y87tb3WOgglIX5excKnFMdNVfDY/63jJLiu7lQIvyxpKWFw/vgVCwfTha\n42tPkhX6bUUAkFAeNOre6B8JFqufhK13Fu/8pFu6p97vqTiePOgBMu/zi58J8roy\nMEImYh1hNwktG/xIUVfV7L2V+wtSP6MbYtliHP6oXkAmdC+v/Buv6im7XM/uMsfy\n+35u4EhvAgMBAAECggEACrCsWrlusgSieTX+54ysr776tWRDFBPzBxZ1zkRPGzc3\ng3xylpI2+bvWPu2W5jVKT7WByyroe8Gi+g/Erk4zEA3VdPp6TCeZ4q4YLguQ5JOg\nQWUb/KMPJ7ZbChuIg/ar5BxdE6JPa8rQ/hEmy43wcEooM0l2JZ4gqYK7Z3O9zGsI\nMCtHWqM4S1xKSg96bXwBJcz0/pOsUhHAKJg9BmMRDXADehgGL1TfvlK6z+w6kP4U\nUlHCGMSyIi1RySs+HjyP28qXCG4xaZT2ue/Fy3uL3II5R0y8sbFACtWIz7m2Gqs6\nJTL6D/1/NoFjfEfgBx4AaTNWj5y+DulkxSfFVIoZwQKBgQDPLi+3NU1WRBABsQuj\nnbYFJLPtlQBCDPpVMiqlCiFvcUI4+rfS8/tj96X/3/K82/s3r3erEB5jj4zMbgST\nUu9WmN0P+vpu8m2RX6YdIxX6OJpqH3fhoC7UEaj9GhPT2RZPPFDCCW1+0nG/mQE1\n0mHwIY6lNCrWR587Ai7v4W5jRQKBgQC5nEH9VQNORnXJSaA+IATFjLdKHk9HaFZq\nRo8wnGDfl5mm6YzycTE8FFnFb+Ovr01zH4yVlMSaQtj9ErY/x2xo/X9vZL1vxl/R\ngBHX/YPwqH9SkJqp5GfMbzXwf0cPtpBA92Er0le4szOHRF9rNfiasbguvXaamk+5\nzy12mqY+IwKBgQCnQ1SGhuPvF3gMxZDuAS+oq18QGlFhAfVAvwWqxKkFvdyG//NU\nvmFg7dj44Sapzrfc1y63zoWaP5SentvWzQgpU7R1aFyzIcnPqfcEYwUlRHl13/37\nDEWCNNfHrzv+tq7KPZm9bbsWvnPTCYXum/Ex2wW83ocPBDfLfhHC3K8wOQKBgQCR\njippwfs/rR29ZlGVpoJXcUxjgXVmaDosSX0M//UwIrDKJij0DzQvCz6DCIWjRnQU\nLc+PlgS/fGCxxbTKO1eW1gTTlErCluyZXDeiDBsl5N1EIEZJqOaFeUjxer59Yguq\nBtVbCi7klxN3pnS1nLOCjJAFh2q1PwH6kq/ybMClxQKBgQDAPcKqtMdmXx/KuAZC\nrNo5o4AKybbYwnUExcbcg52wCBLw8GtkrhjYfP1P+Q8elCooSRXpXtbmK1KIyt+j\nvgQYS03vh84kWIsVON10JZdaCF9aMkDkd4FhSK06QVOmhawNzavztdqdYOYtx8zO\n2eNxZfeTJuDH5K5FovFbFnjIQg==\n-----END PRIVATE KEY-----\n",
+  "client_email": "jakescerri-pftc-homeassignment@pftc-jake.iam.gserviceaccount.com",
+  "client_id": "101626630508323554096",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/jakescerri-pftc-homeassignment%40pftc-jake.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
