@@ -128,7 +128,7 @@ namespace JakeScerriPFTC_Assignment.Controllers
                 var existingUser = await _firestoreService.GetUserByEmailAsync(userEmail);
                 UserRole role = UserRole.User; // Default role
                 
-                // IMPORTANT: First check if user exists, then get their current role
+                // If user exists, preserve their role
                 if (existingUser != null)
                 {
                     _logger.LogInformation($"User {userEmail} already exists with role {existingUser.Role}");
@@ -139,17 +139,22 @@ namespace JakeScerriPFTC_Assignment.Controllers
                     _logger.LogInformation($"User {userEmail} is new, assigning default User role");
                 }
                 
-                // Create claims for authentication with the correct role
+                // Save/update user with preserved role
+                var user = await _firestoreService.SaveUserAsync(userEmail, role);
+                
+                // Create claims for authentication
                 var claims = new List<Claim>
                 {
                     new Claim(ClaimTypes.Email, payload.Email),
                     new Claim(ClaimTypes.Name, payload.Name ?? payload.Email),
                     new Claim("GoogleId", payload.Subject),
-                    new Claim("Picture", payload.Picture ?? ""),
-                    new Claim(ClaimTypes.Role, role.ToString())
+                    new Claim("Picture", payload.Picture ?? "")
                 };
                 
-                _logger.LogInformation($"User {userEmail} authenticated with role {role}");
+                // Add role claim
+                claims.Add(new Claim(ClaimTypes.Role, user.Role.ToString()));
+                
+                _logger.LogInformation($"User {userEmail} authenticated with role {user.Role}");
 
                 // Create claims identity
                 var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
@@ -165,13 +170,6 @@ namespace JakeScerriPFTC_Assignment.Controllers
                         ExpiresUtc = DateTime.UtcNow.AddDays(7)
                     });
 
-                // AFTER authentication, save or update the user to preserve their role
-                if (existingUser == null)
-                {
-                    // For new users only, create with default role
-                    await _firestoreService.SaveUserAsync(userEmail, role);
-                }
-                
                 // Redirect to the home page
                 return Redirect("/");
             }
@@ -197,16 +195,13 @@ namespace JakeScerriPFTC_Assignment.Controllers
                 return Json(new { isAuthenticated = false });
             }
 
-            string role = User.FindFirstValue(ClaimTypes.Role);
-            _logger.LogInformation($"Current user role from claims: {role}");
-
             return Json(new
             {
                 isAuthenticated = true,
                 email = User.FindFirstValue(ClaimTypes.Email),
                 name = User.FindFirstValue(ClaimTypes.Name),
                 picture = User.FindFirstValue("Picture"),
-                role = role
+                role = User.FindFirstValue(ClaimTypes.Role)
             });
         }
     }

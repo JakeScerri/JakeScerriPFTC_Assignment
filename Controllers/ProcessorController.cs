@@ -9,17 +9,17 @@ namespace JakeScerriPFTC_Assignment.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize(Roles = "Technician")]
+    [Authorize(Roles = "Technician")] // Only technicians can manually trigger processing
     public class ProcessorController : ControllerBase
     {
-        private readonly TicketProcessorService _processorService;
+        private readonly TicketProcessorService _ticketProcessorService;
         private readonly ILogger<ProcessorController> _logger;
 
         public ProcessorController(
-            TicketProcessorService processorService,
+            TicketProcessorService ticketProcessorService,
             ILogger<ProcessorController> logger)
         {
-            _processorService = processorService;
+            _ticketProcessorService = ticketProcessorService;
             _logger = logger;
         }
 
@@ -28,13 +28,16 @@ namespace JakeScerriPFTC_Assignment.Controllers
         {
             try
             {
-                await _processorService.ProcessTicketsAsync();
-                return Ok(new { message = "Tickets processed successfully" });
+                _logger.LogInformation("Manual ticket processing triggered");
+                
+                var result = await _ticketProcessorService.ProcessTicketsAsync();
+                
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing tickets");
-                return StatusCode(500, $"An error occurred: {ex.Message}");
+                _logger.LogError(ex, "Error manually processing tickets");
+                return StatusCode(500, new { error = ex.Message });
             }
         }
     }

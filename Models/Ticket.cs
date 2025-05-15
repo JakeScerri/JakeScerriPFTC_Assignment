@@ -48,7 +48,7 @@ namespace JakeScerriPFTC_Assignment.Models
 
     public enum UserRole
     {
-        User = 0,
-        Technician = 1
+        User,
+        Technician
     }
 }

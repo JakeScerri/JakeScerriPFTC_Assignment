@@ -24,25 +24,28 @@ namespace JakeScerriPFTC_Assignment.Services
            _firestoreDb = FirestoreDb.Create(projectId);
        }
 
-       // AA2.1.d - Save user with role - Enhanced to better preserve roles
+       // Modified to properly handle role preservation
        public async Task<User> SaveUserAsync(string email, UserRole? requestedRole = null)
        {
            try
            {
-               _logger.LogInformation($"SaveUserAsync called for {email}, requestedRole: {(requestedRole.HasValue ? requestedRole.Value.ToString() : "null")}");
+               _logger.LogInformation($"Saving user: {email}");
        
                // Check if user already exists
                User existingUser = await GetUserByEmailAsync(email);
+               
+               // Determine the role to use - preserve existing role if no role specifically requested
+               UserRole roleToUse = requestedRole ?? existingUser?.Role ?? UserRole.User;
                
                if (existingUser != null)
                {
                    _logger.LogInformation($"User {email} exists with role {existingUser.Role}");
            
                    // Only update role if specifically requested with a different value
-                   if (requestedRole.HasValue && existingUser.Role != requestedRole.Value)
+                   if (existingUser.Role != roleToUse && requestedRole.HasValue)
                    {
-                       _logger.LogInformation($"Updating user {email} role from {existingUser.Role} to {requestedRole.Value}");
-                       existingUser.Role = requestedRole.Value;
+                       _logger.LogInformation($"Updating user {email} role from {existingUser.Role} to {roleToUse}");
+                       existingUser.Role = roleToUse;
                        await UpdateUserAsync(existingUser);
                    }
                    else
@@ -53,9 +56,6 @@ namespace JakeScerriPFTC_Assignment.Services
                    return existingUser;
                }
 
-               // For new users, use requested role or default to User
-               UserRole roleToUse = requestedRole ?? UserRole.User;
-               
                // Create new user
                _logger.LogInformation($"Creating new user {email} with role {roleToUse}");
                var user = new User
@@ -102,9 +102,7 @@ namespace JakeScerriPFTC_Assignment.Services
                    // Try to convert to User object
                    try 
                    {
-                       var user = snapshot.ConvertTo<User>();
-                       _logger.LogInformation($"User {email} role from Firestore: {user.Role}");
-                       return user;
+                       return snapshot.ConvertTo<User>();
                    }
                    catch (Exception ex) 
                    {
@@ -112,17 +110,12 @@ namespace JakeScerriPFTC_Assignment.Services
                        
                        // Try manual conversion as fallback
                        var userData = snapshot.ToDictionary();
-                       
-                       int roleValue = userData.ContainsKey("Role") 
-                           ? Convert.ToInt32(userData["Role"]) 
-                           : 0;
-                           
-                       _logger.LogInformation($"User {email} raw role value from Firestore: {roleValue}");
-                       
                        return new User 
                        {
                            Email = email,
-                           Role = (UserRole)roleValue,
+                           Role = userData.ContainsKey("Role") 
+                               ? (UserRole)Convert.ToInt32(userData["Role"]) 
+                               : UserRole.User,
                            CreatedAt = userData.ContainsKey("CreatedAt") 
                                ? (DateTime)userData["CreatedAt"] 
                                : DateTime.UtcNow
@@ -145,7 +138,7 @@ namespace JakeScerriPFTC_Assignment.Services
        {
            try
            {
-               _logger.LogInformation($"Updating user: {user.Email} with role: {user.Role}");
+               _logger.LogInformation($"Updating user: {user.Email}");
                
                // Create a dictionary representation for more reliable updating
                var userData = new Dictionary<string, object>
@@ -157,7 +150,7 @@ namespace JakeScerriPFTC_Assignment.Services
                
                DocumentReference docRef = _firestoreDb.Collection(_usersCollection).Document(user.Email);
                await docRef.SetAsync(userData);
-               _logger.LogInformation($"User {user.Email} updated, new role: {user.Role}");
+               _logger.LogInformation($"User {user.Email} updated");
                return true;
            }
            catch (Exception ex)

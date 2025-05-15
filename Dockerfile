@@ -17,4 +17,6 @@ RUN dotnet publish "JakeScerriPFTC_Assignment.csproj" -c Release -o /app/publish
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+COPY pftc-jake_key.json ./
+ENV GOOGLE_APPLICATION_CREDENTIALS=/app/pftc-jake_key.json
 ENTRYPOINT ["dotnet", "JakeScerriPFTC_Assignment.dll"]

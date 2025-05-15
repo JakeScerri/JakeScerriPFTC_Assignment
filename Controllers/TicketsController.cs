@@ -19,17 +19,20 @@ namespace JakeScerriPFTC_Assignment.Controllers
         private readonly StorageService _storageService;
         private readonly FirestoreService _firestoreService;
         private readonly PubSubService _pubSubService;
+        private readonly EmailService _emailService;
         private readonly ILogger<TicketsController> _logger;
 
         public TicketsController(
             StorageService storageService,
             FirestoreService firestoreService,
             PubSubService pubSubService,
+            EmailService emailService,
             ILogger<TicketsController> logger)
         {
             _storageService = storageService;
             _firestoreService = firestoreService;
             _pubSubService = pubSubService;
+            _emailService = emailService;
             _logger = logger;
         }
 
@@ -40,35 +43,15 @@ namespace JakeScerriPFTC_Assignment.Controllers
             {
                 // Get email from authenticated user
                 string userEmail = User.FindFirstValue(ClaimTypes.Email) ?? "anonymous@example.com";
-                string userRoleClaim = User.FindFirstValue(ClaimTypes.Role);
                 
-                _logger.LogInformation($"Creating ticket for user: {userEmail}, role from claims: {userRoleClaim}");
+                _logger.LogInformation($"Creating ticket for user: {userEmail}");
                 
-                // Get the current user from Firestore
+                // Get the current user and their role before saving
                 var existingUser = await _firestoreService.GetUserByEmailAsync(userEmail);
                 
-                // DO NOT update the user here - this avoids accidental role resets
-                // We'll just use the user for logging purposes
-                if (existingUser != null)
-                {
-                    _logger.LogInformation($"User found in Firestore with role: {existingUser.Role}");
-                }
-                else
-                {
-                    _logger.LogInformation("User not found in Firestore");
-                    
-                    // If the user doesn't exist in Firestore but has a role claim,
-                    // parse the role from the claim
-                    UserRole parsedRole = UserRole.User;
-                    if (!string.IsNullOrEmpty(userRoleClaim) && 
-                        Enum.TryParse<UserRole>(userRoleClaim, out var claimRole))
-                    {
-                        parsedRole = claimRole;
-                    }
-                    
-                    // Create the user with the role from claims
-                    await _firestoreService.SaveUserAsync(userEmail, parsedRole);
-                }
+                // Ensure user exists in Firestore with their CURRENT role preserved
+                // Pass null as the role to ensure we don't change it
+                await _firestoreService.SaveUserAsync(userEmail, existingUser?.Role);
                 
                 // Upload screenshots to Cloud Storage (AA2.1.c & KU4.3.a)
                 var imageUrls = new List<string>();
@@ -152,6 +135,46 @@ namespace JakeScerriPFTC_Assignment.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error closing ticket {id}");
+                return StatusCode(500, $"An error occurred: {ex.Message}");
+            }
+        }
+
+        [HttpPost("{id}/notify")]
+        [Authorize(Roles = "Technician")]
+        public async Task<IActionResult> NotifyTicket(string id)
+        {
+            try
+            {
+                string technicianEmail = User.FindFirstValue(ClaimTypes.Email);
+                
+                _logger.LogInformation($"Technician {technicianEmail} sending notification for ticket {id}");
+                
+                // In a real implementation, you would:
+                // 1. Fetch the ticket from database
+                // 2. Send email notification
+                
+                // For testing, create a simulated ticket
+                var ticket = new Ticket
+                {
+                    Id = id,
+                    Title = "Test Ticket",
+                    Description = "This is a test ticket for email notification",
+                    UserEmail = "testuser@example.com",
+                    Priority = TicketPriority.High,
+                    DateUploaded = DateTime.UtcNow,
+                    Status = TicketStatus.Open
+                };
+                
+                // Send email notification
+                await _emailService.SendTicketNotificationAsync(ticket);
+                
+                return Ok(new { 
+                    message = $"Email notification sent for ticket {id}"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error sending notification for ticket {id}");
                 return StatusCode(500, $"An error occurred: {ex.Message}");
             }
         }

@@ -1,80 +1,136 @@
-﻿<!-- Add this section to the TechnicianArea.cshtml -->
-<div class="row mb-4">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-header">
-                PubSub Management
+﻿@using System.Security.Claims
+@{
+    ViewData["Title"] = "Technician Area";
+}
+
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h2>Technician Area</h2>
+        </div>
+        <div class="card-body">
+            <p>This area is accessible only to technicians.</p>
+            <div class="alert alert-info">
+                <strong>Note:</strong> If you can see this page, your role is "Technician" and the authorization attribute is working correctly.
             </div>
-            <div class="card-body">
-                <div class="d-flex mb-3">
-                    <button id="view-pending" class="btn btn-info me-2">View Pending Tickets</button>
-                    <button id="clear-pending" class="btn btn-danger">Clear Pending</button>
+            
+            <hr>
+            
+            <h4>Technician Dashboard</h4>
+            <p>This would display a dashboard of all tickets requiring technician attention.</p>
+            
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card bg-danger text-white mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">High Priority</h5>
+                            <p class="card-text">0 tickets</p>
+                        </div>
+                    </div>
                 </div>
-                <div id="pubsub-result" class="mt-3"></div>
+                <div class="col-md-4">
+                    <div class="card bg-warning text-dark mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">Medium Priority</h5>
+                            <p class="card-text">0 tickets</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card bg-success text-white mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">Low Priority</h5>
+                            <p class="card-text">0 tickets</p>
+                        </div>
+                    </div>
+                </div>
             </div>
+            
+            <hr>
+            
+            <h4>Close Ticket</h4>
+            <div class="input-group mb-3">
+                <input type="text" id="ticketIdInput" class="form-control" placeholder="Enter Ticket ID">
+                <button class="btn btn-outline-secondary" type="button" id="closeTicketBtn">Close Ticket</button>
+            </div>
+            
+            <div id="closeTicketResult" class="mt-3"></div>
+            
+            <hr>
+            
+            <h4>Ticket Processing</h4>
+            <p>Manually trigger the ticket processing function:</p>
+            <button id="processTicketsBtn" class="btn btn-primary">Process Tickets</button>
+            <div id="processingResult" class="mt-3" style="display: none;">
+                <div class="alert alert-info">
+                    <span id="processingMessage"></span>
+                </div>
+            </div>
+            
+            <a href="/" class="btn btn-secondary mt-3">Back to Home</a>
         </div>
     </div>
 </div>
 
-<!-- Add this script to the Scripts section -->
-<script>
-    // PubSub management
-    $('#view-pending').click(function() {
-        $('#pubsub-result').html('<div class="alert alert-info">Loading pending tickets...</div>');
-        
-        $.ajax({
-            url: '/api/pubsub/pending',
-            type: 'GET',
-            success: function(result) {
-                if (result.tickets && result.tickets.length > 0) {
-                    var html = '<div class="alert alert-success">Found ' + result.count + ' pending tickets</div>';
-                    html += '<div class="table-responsive"><table class="table table-striped">';
-                    html += '<thead><tr><th>ID</th><th>Title</th><th>Priority</th><th>Submitted By</th></tr></thead>';
-                    html += '<tbody>';
-                    
-                    result.tickets.forEach(function(ticket) {
-                        var priorityClass = '';
-                        switch(ticket.priority) {
-                            case 0: priorityClass = 'badge bg-danger'; break; // High
-                            case 1: priorityClass = 'badge bg-warning text-dark'; break; // Medium
-                            case 2: priorityClass = 'badge bg-info text-dark'; break; // Low
-                            default: priorityClass = 'badge bg-secondary';
-                        }
-                        
-                        html += '<tr>';
-                        html += '<td>' + ticket.id + '</td>';
-                        html += '<td>' + ticket.title + '</td>';
-                        html += '<td><span class="' + priorityClass + '">' + ['High', 'Medium', 'Low'][ticket.priority] + '</span></td>';
-                        html += '<td>' + ticket.userEmail + '</td>';
-                        html += '</tr>';
-                    });
-                    
-                    html += '</tbody></table></div>';
-                    $('#pubsub-result').html(html);
-                } else {
-                    $('#pubsub-result').html('<div class="alert alert-warning">No pending tickets found</div>');
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            // Close ticket functionality
+            $('#closeTicketBtn').click(function() {
+                var ticketId = $('#ticketIdInput').val();
+                if (!ticketId) {
+                    $('#closeTicketResult').html(
+                        '<div class="alert alert-danger">Please enter a ticket ID</div>'
+                    );
+                    return;
                 }
-            },
-            error: function(xhr) {
-                $('#pubsub-result').html('<div class="alert alert-danger">Error: ' + xhr.responseText + '</div>');
-            }
-        });
-    });
-    
-    $('#clear-pending').click(function() {
-        if (confirm('Are you sure you want to clear all pending tickets from PubSub?')) {
-            $('#pubsub-result').html('<div class="alert alert-info">Clearing pending tickets...</div>');
-            
-            $.ajax({
-                url: '/api/pubsub/clear',
-                type: 'POST',
-                success: function(result) {
-                    $('#pubsub-result').html('<div class="alert alert-success">' + result.message + '</div>');
-                },
-                error: function(xhr) {
-                    $('#pubsub-result').html('<div class="alert alert-danger">Error: ' + xhr.responseText + '</div>');
-                }
+                
+                $.ajax({
+                    url: '/api/tickets/' + ticketId + '/close',
+                    type: 'POST',
+                    success: function(data) {
+                        $('#closeTicketResult').html(
+                            '<div class="alert alert-success">' + data.message + '</div>'
+                        );
+                    },
+                    error: function(error) {
+                        $('#closeTicketResult').html(
+                            '<div class="alert alert-danger">Error: ' + 
+                            (error.responseJSON?.message || error.responseText || error.statusText) + 
+                            '</div>'
+                        );
+                    }
+                });
             });
-        }
-    });
-</script>
+            
+            // Process tickets functionality
+            $('#processTicketsBtn').click(function() {
+                // Show processing status
+                const resultDiv = $('#processingResult');
+                const messageSpan = $('#processingMessage');
+                
+                resultDiv.show();
+                messageSpan.text('Processing tickets...');
+                
+                // Call the processor endpoint
+                $.ajax({
+                    url: '/api/processor/process-tickets',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    success: function(data) {
+                        console.log('Success:', data);
+                        messageSpan.text('Tickets processed successfully! ' + 
+                                       (data.message ? data.message : JSON.stringify(data)));
+                        resultDiv.find('.alert').removeClass('alert-info alert-danger').addClass('alert-success');
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('Error:', error);
+                        messageSpan.text('Error processing tickets: ' + 
+                                      (xhr.responseJSON?.error || xhr.responseText || error));
+                        resultDiv.find('.alert').removeClass('alert-info alert-success').addClass('alert-danger');
+                    }
+                });
+            });
+        });
+    </script>
+}

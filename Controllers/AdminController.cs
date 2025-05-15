@@ -11,7 +11,7 @@ namespace JakeScerriPFTC_Assignment.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize(Roles = "Technician")] // Only technicians can access this controller
+    [Authorize(Roles = "Technician")] // Admin functions are available to technicians
     public class AdminController : ControllerBase
     {
         private readonly FirestoreService _firestoreService;
@@ -39,7 +39,7 @@ namespace JakeScerriPFTC_Assignment.Controllers
             {
                 _logger.LogInformation("Admin requesting all technicians");
                 var technicians = await _firestoreService.GetTechniciansAsync();
-
+                
                 return Ok(technicians);
             }
             catch (Exception ex)
@@ -48,7 +48,7 @@ namespace JakeScerriPFTC_Assignment.Controllers
                 return StatusCode(500, $"An error occurred: {ex.Message}");
             }
         }
-
+        
         // Update a user's role (promote to technician or demote to user)
         [HttpPut("users/{email}/role")]
         public async Task<IActionResult> UpdateUserRole(string email, [FromBody] UpdateRoleModel model)
@@ -56,11 +56,10 @@ namespace JakeScerriPFTC_Assignment.Controllers
             try
             {
                 _logger.LogInformation($"Admin updating user {email} role to {model.Role}");
-
+                
                 var user = await _firestoreService.SaveUserAsync(email, model.Role);
-
-                return Ok(new
-                {
+                
+                return Ok(new { 
                     message = $"User {email} role updated to {model.Role}",
                     user
                 });
@@ -71,7 +70,7 @@ namespace JakeScerriPFTC_Assignment.Controllers
                 return StatusCode(500, $"An error occurred: {ex.Message}");
             }
         }
-
+        
         // Archive old tickets
         [HttpPost("tickets/archive")]
         public async Task<IActionResult> ArchiveOldTickets()
@@ -80,12 +79,11 @@ namespace JakeScerriPFTC_Assignment.Controllers
             {
                 string technicianEmail = User.FindFirstValue(ClaimTypes.Email);
                 _logger.LogInformation($"Admin {technicianEmail} archiving old tickets");
-
+                
                 // In a real implementation, you would find and archive old tickets
                 // This is a placeholder for demonstration
-
-                return Ok(new
-                {
+                
+                return Ok(new { 
                     message = "Ticket archiving functionality would be implemented here"
                 });
             }
