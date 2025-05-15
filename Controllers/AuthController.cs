@@ -46,33 +46,61 @@ namespace JakeScerriPFTC_Assignment.Controllers
             };
         }
 
-        private async Task InitializeSecretsAsync()
+       private async Task InitializeSecretsAsync()
+{
+    if (!_secretsInitialized)
+    {
+        try
         {
-            if (!_secretsInitialized)
+            _logger.LogInformation("Loading OAuth secrets from Secret Manager");
+            
+            // Load secrets from Secret Manager
+            string clientId = await _secretManagerService.GetSecretAsync("oauth-client-id");
+            string clientSecret = await _secretManagerService.GetSecretAsync("oauth-client-secret");
+            
+            // Only use Secret Manager values if they're not empty
+            if (!string.IsNullOrEmpty(clientId) && !string.IsNullOrEmpty(clientSecret))
             {
-                try
-                {
-                    _logger.LogInformation("Loading OAuth secrets from Secret Manager");
-                    
-                    // Load secrets from Secret Manager
-                    _authConfig.ClientId = await _secretManagerService.GetSecretAsync("oauth-client-id");
-                    _authConfig.ClientSecret = await _secretManagerService.GetSecretAsync("oauth-client-secret");
-                    
-                    _secretsInitialized = true;
-                    _logger.LogInformation("OAuth secrets loaded successfully");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to load OAuth secrets from Secret Manager");
-                    
-                    // Fall back to configuration values if available
-                    _authConfig.ClientId = _configuration["GoogleCloud:Auth:ClientId"] ?? "";
-                    _authConfig.ClientSecret = _configuration["GoogleCloud:Auth:ClientSecret"] ?? "";
-                    
-                    _logger.LogWarning("Using fallback OAuth credentials from configuration");
-                }
+                _authConfig.ClientId = clientId;
+                _authConfig.ClientSecret = clientSecret;
+                _logger.LogInformation("OAuth secrets loaded successfully from Secret Manager");
+            }
+            else
+            {
+                throw new Exception("Secret Manager returned empty values");
             }
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load OAuth secrets from Secret Manager");
+            
+            // Fall back to configuration values if available
+            _authConfig.ClientId = _configuration["GoogleCloud:Auth:ClientId"] ?? "";
+            _authConfig.ClientSecret = _configuration["GoogleCloud:Auth:ClientSecret"] ?? "";
+            
+            if (string.IsNullOrEmpty(_authConfig.ClientId) || string.IsNullOrEmpty(_authConfig.ClientSecret))
+            {
+                _logger.LogError("No OAuth credentials available from any source");
+                throw new Exception("No OAuth credentials available from any source");
+            }
+            
+            _logger.LogWarning("Using fallback OAuth credentials from configuration");
+        }
+        
+        // Make sure RedirectUri is correctly set for the environment
+        if (string.IsNullOrEmpty(_authConfig.RedirectUri))
+        {
+            // Default fallback for deployed environment
+            if (_configuration["ASPNETCORE_ENVIRONMENT"] == "Production")
+            {
+                _authConfig.RedirectUri = "https://ticket-system-55855542835.europe-west1.run.app/api/auth/callback";
+            }
+        }
+        
+        _logger.LogInformation($"Auth configuration: ClientId length={_authConfig.ClientId?.Length ?? 0}, RedirectUri={_authConfig.RedirectUri}");
+        _secretsInitialized = true;
+    }
+}
 
         [HttpGet("login")]
         public async Task<IActionResult> Login()

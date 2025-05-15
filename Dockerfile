@@ -1,22 +1,26 @@
-FROM mcr.microsoft.com/dotnet/aspnet:6.0 AS base
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /app
-EXPOSE 80
-EXPOSE 443
 
-FROM mcr.microsoft.com/dotnet/sdk:6.0 AS build
-WORKDIR /src
-COPY ["JakeScerriPFTC_Assignment.csproj", "./"]
-RUN dotnet restore "JakeScerriPFTC_Assignment.csproj"
-COPY . .
-WORKDIR "/src"
-RUN dotnet build "JakeScerriPFTC_Assignment.csproj" -c Release -o /app/build
+# Copy csproj and restore dependencies
+COPY *.csproj ./
+RUN dotnet restore
 
-FROM build AS publish
-RUN dotnet publish "JakeScerriPFTC_Assignment.csproj" -c Release -o /app/publish
+# Copy everything else and build
+COPY . ./
+RUN dotnet publish -c Release -o out
 
-FROM base AS final
+# Build runtime image
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
-COPY --from=publish /app/publish .
-COPY pftc-jake_key.json ./
+COPY --from=build /app/out .
+
+# Copy the key file - adjusted path to match your project structure
+COPY pftc-jake_key.json /app/pftc-jake_key.json
 ENV GOOGLE_APPLICATION_CREDENTIALS=/app/pftc-jake_key.json
+
+# Set ASP.NET Core environment to Production
+ENV ASPNETCORE_ENVIRONMENT=Production
+# Set URLs to listen on port 8080 (required for Cloud Run)
+ENV ASPNETCORE_URLS=http://+:8080
+
 ENTRYPOINT ["dotnet", "JakeScerriPFTC_Assignment.dll"]
