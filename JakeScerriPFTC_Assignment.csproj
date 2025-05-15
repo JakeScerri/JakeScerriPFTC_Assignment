@@ -24,7 +24,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <None Include="CloudFunction.csproj" />
+      <None Include="CloudFunction\CloudFunction.csproj" />
     </ItemGroup>
 
 </Project>
