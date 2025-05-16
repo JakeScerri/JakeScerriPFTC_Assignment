@@ -1,9 +1,12 @@
 using JakeScerriPFTC_Assignment.Models;
+using JakeScerriPFTC_Assignment.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections.Generic;
 using System.Security.Claims;
+using System.Linq;
 using System.Threading.Tasks;
-using JakeScerriPFTC_Assignment.Services;
 
 namespace JakeScerriPFTC_Assignment.Controllers
 {
@@ -13,29 +16,151 @@ namespace JakeScerriPFTC_Assignment.Controllers
     public class TechniciansController : ControllerBase
     {
         private readonly FirestoreService _firestoreService;
+        private readonly RedisService _redisService;
         private readonly ILogger<TechniciansController> _logger;
 
-        public TechniciansController(FirestoreService firestoreService, ILogger<TechniciansController> logger)
+        public TechniciansController(
+            FirestoreService firestoreService, 
+            RedisService redisService,
+            ILogger<TechniciansController> logger)
         {
             _firestoreService = firestoreService;
+            _redisService = redisService;
             _logger = logger;
         }
 
-        [HttpGet("all-tickets")]
-        public IActionResult GetAllTickets()
+        [HttpGet("tickets")]
+        public async Task<IActionResult> GetAllTickets()
         {
-            // This would typically fetch all tickets from a ticket service
-            // For now, we'll just return a simple response
-            return Ok(new { message = "This would show all tickets for technicians" });
+            try
+            {
+                string technicianEmail = User.FindFirstValue(ClaimTypes.Email);
+                _logger.LogInformation($"Technician {technicianEmail} requesting all tickets");
+                
+                // Get open tickets from Redis cache (KU4.1.a - Read from cache)
+                var tickets = await _redisService.GetOpenTicketsAsync();
+                
+                _logger.LogInformation($"Retrieved {tickets.Count} open tickets from Redis cache");
+                
+                return Ok(new { 
+                    success = true,
+                    tickets = tickets
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting tickets for technician");
+                return StatusCode(500, new { 
+                    success = false, 
+                    error = ex.Message 
+                });
+            }
+        }
+
+        [HttpGet("tickets/priority/{priority}")]
+        public async Task<IActionResult> GetTicketsByPriority(string priority)
+        {
+            try
+            {
+                string technicianEmail = User.FindFirstValue(ClaimTypes.Email);
+                
+                // Parse the priority
+                if (!Enum.TryParse<TicketPriority>(priority, true, out var ticketPriority))
+                {
+                    return BadRequest(new { 
+                        success = false, 
+                        error = "Invalid priority. Valid values are High, Medium, Low." 
+                    });
+                }
+                
+                _logger.LogInformation($"Technician {technicianEmail} requesting {priority} priority tickets");
+                
+                // Get tickets by priority from Redis cache
+                var tickets = await _redisService.GetTicketsByPriorityAsync(ticketPriority);
+                
+                _logger.LogInformation($"Retrieved {tickets.Count} {priority} priority tickets from Redis cache");
+                
+                return Ok(new { 
+                    success = true,
+                    tickets = tickets
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error getting {priority} priority tickets for technician");
+                return StatusCode(500, new { 
+                    success = false, 
+                    error = ex.Message 
+                });
+            }
+        }
+
+        [HttpPost("tickets/{id}/close")]
+        public async Task<IActionResult> CloseTicket(string id)
+        {
+            try
+            {
+                string technicianEmail = User.FindFirstValue(ClaimTypes.Email);
+                _logger.LogInformation($"Technician {technicianEmail} closing ticket {id}");
+                
+                // Close the ticket in Redis
+                await _redisService.CloseTicketAsync(id, technicianEmail);
+                
+                _logger.LogInformation($"Ticket {id} closed by {technicianEmail}");
+                
+                return Ok(new { 
+                    success = true,
+                    message = $"Ticket {id} closed successfully" 
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error closing ticket {id}");
+                return StatusCode(500, new { 
+                    success = false, 
+                    error = ex.Message 
+                });
+            }
         }
 
         [HttpGet("dashboard")]
-        public IActionResult GetDashboard()
+        public async Task<IActionResult> GetDashboard()
         {
-            // This would show the technician dashboard
-            return Ok(new { message = "Welcome to the technician dashboard!" });
+            try
+            {
+                string technicianEmail = User.FindFirstValue(ClaimTypes.Email);
+                _logger.LogInformation($"Technician {technicianEmail} accessing dashboard");
+                
+                // Get open tickets from Redis cache
+                var allTickets = await _redisService.GetOpenTicketsAsync();
+                
+                // Group tickets by priority
+                var highPriorityCount = allTickets.Count(t => t.Priority == TicketPriority.High);
+                var mediumPriorityCount = allTickets.Count(t => t.Priority == TicketPriority.Medium);
+                var lowPriorityCount = allTickets.Count(t => t.Priority == TicketPriority.Low);
+                
+                return Ok(new { 
+                    success = true,
+                    ticketCounts = new {
+                        total = allTickets.Count,
+                        high = highPriorityCount,
+                        medium = mediumPriorityCount,
+                        low = lowPriorityCount
+                    },
+                    recentTickets = allTickets.OrderByDescending(t => t.DateUploaded).Take(5)
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading technician dashboard");
+                return StatusCode(500, new { 
+                    success = false, 
+                    error = ex.Message 
+                });
+            }
         }
-
-        // Additional endpoints for technician functionality will be added in the next subtask
+        
+        
     }
+    
 }

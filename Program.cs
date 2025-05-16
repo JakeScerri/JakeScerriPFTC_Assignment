@@ -48,6 +48,7 @@ builder.Services.AddSingleton<PubSubService>();
 builder.Services.AddSingleton<SecretManagerService>();
 builder.Services.AddSingleton<EmailService>();
 builder.Services.AddSingleton<TicketProcessorService>();
+builder.Services.AddSingleton<RedisService>();
 
 // Configure logging
 builder.Logging.ClearProviders();
@@ -189,17 +190,6 @@ app.MapGet("/health", () =>
 {
     Console.WriteLine($"Health check requested at {DateTime.UtcNow}");
     return Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow });
-});
-
-// Root endpoint for testing
-app.MapGet("/", () => 
-{
-    Console.WriteLine($"Root endpoint requested at {DateTime.UtcNow}");
-    return Results.Ok(new { 
-        status = "running", 
-        message = "JakeScerriPFTC_Assignment API",
-        timestamp = DateTime.UtcNow 
-    });
 });
 
 Console.WriteLine($"Application starting in {app.Environment.EnvironmentName} environment on URL: http://0.0.0.0:{port}");

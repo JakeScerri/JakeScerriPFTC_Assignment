@@ -25,6 +25,10 @@ ENV ASPNETCORE_ENVIRONMENT=Production
 ENV PORT=8080
 ENV ASPNETCORE_URLS=http://+:8080
 
+# Add Redis connection configuration
+ENV Redis__ConnectionString="redis-19047.c328.europe-west3-1.gce.redns.redis-cloud.com:19047,password=oW4hAnXlX0QCOleAJYm2996UnZlUmbOP,ssl=true,abortConnect=false"
+ENV Redis__InstanceName="TicketSystem:"
+
 # Add verbose diagnostics for startup
 RUN echo "Container image built on $(date)"
 
