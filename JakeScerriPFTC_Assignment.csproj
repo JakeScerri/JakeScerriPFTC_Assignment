@@ -9,11 +9,17 @@
     <ItemGroup>
       <PackageReference Include="Google.Apis.Auth" Version="1.69.0" />
       <PackageReference Include="Google.Cloud.Firestore" Version="3.10.0" />
+      <PackageReference Include="Google.Cloud.Functions.Framework" Version="3.0.1" />
       <PackageReference Include="Google.Cloud.PubSub.V1" Version="3.24.0" />
       <PackageReference Include="Google.Cloud.SecretManager.V1" Version="2.5.0" />
       <PackageReference Include="Google.Cloud.Storage.V1" Version="4.13.0" />
       <PackageReference Include="Microsoft.AspNetCore.Authentication.Cookies" Version="2.3.0" />
       <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+      <PackageReference Include="StackExchange.Redis" Version="2.8.37" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Include="CloudFunction\Function.csproj" />
     </ItemGroup>
 
 </Project>

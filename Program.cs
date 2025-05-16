@@ -11,7 +11,7 @@ Console.WriteLine($"GOOGLE_APPLICATION_CREDENTIALS: {Environment.GetEnvironmentV
 // First, create the builder
 var builder = WebApplication.CreateBuilder(args);
 
-// Explicitly configure to listen on the right port
+// Explicitly configure to listen on the right port - VERY IMPORTANT FOR CLOUD RUN
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 // Log environment information
@@ -19,7 +19,7 @@ Console.WriteLine($"Environment: {builder.Environment.EnvironmentName}");
 Console.WriteLine($"IsDevelopment: {builder.Environment.IsDevelopment()}");
 Console.WriteLine($"IsProduction: {builder.Environment.IsProduction()}");
 
-// Only set credentials path for local development
+
 if (builder.Environment.IsDevelopment())
 {
     string credentialsPath = builder.Configuration["GoogleCloud:CredentialsPath"];
@@ -80,14 +80,12 @@ var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
-    app.UseHsts();
+    // IMPORTANT: Don't use HSTS in Cloud Run
+    // app.UseHsts();
 }
 
-// In production for Cloud Run, we want to avoid HTTPS redirection
-if (!app.Environment.IsProduction())
-{
-    app.UseHttpsRedirection();
-}
+// IMPORTANT: Skip HTTPS redirection for Cloud Run
+// app.UseHttpsRedirection();
 
 app.UseStaticFiles();
 app.UseRouting();
@@ -101,22 +99,26 @@ app.Use(async (context, next) =>
 {
     try
     {
+        Console.WriteLine($"Received request: {context.Request.Method} {context.Request.Path}");
         await next();
         
         // If not found and part of api/auth/callback, provide details
-        if (context.Response.StatusCode == 404 && 
-            context.Request.Path.Value.Contains("/api/auth/callback"))
+        if (context.Response.StatusCode == 404)
         {
             Console.WriteLine($"404 Not Found: {context.Request.Method} {context.Request.Path}");
-            context.Response.StatusCode = 200;
-            context.Response.ContentType = "text/html";
-            await context.Response.WriteAsync(@"
-                <html><body>
-                    <h1>Debug - Callback Route Not Found</h1>
-                    <p>The callback route was not registered properly.</p>
-                    <p>Please check your route configuration in Program.cs</p>
-                </body></html>
-            ");
+            
+            if (context.Request.Path.Value.Contains("/api/auth/callback"))
+            {
+                context.Response.StatusCode = 200;
+                context.Response.ContentType = "text/html";
+                await context.Response.WriteAsync(@"
+                    <html><body>
+                        <h1>Debug - Callback Route Not Found</h1>
+                        <p>The callback route was not registered properly.</p>
+                        <p>Please check your route configuration in Program.cs</p>
+                    </body></html>
+                ");
+            }
         }
     }
     catch (Exception ex)
@@ -140,6 +142,7 @@ app.Use(async (context, next) =>
 // Add a dedicated endpoint for Cloud Scheduler
 app.MapPost("/process-tickets", async (HttpContext context) => 
 {
+    Console.WriteLine("Process tickets endpoint called");
     var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
     var ticketProcessor = context.RequestServices.GetRequiredService<TicketProcessorService>();
     
@@ -161,6 +164,7 @@ app.MapPost("/process-tickets", async (HttpContext context) =>
     catch (Exception ex) 
     {
         logger.LogError(ex, "Error processing tickets");
+        Console.WriteLine($"Error in /process-tickets: {ex.Message}");
         
         context.Response.StatusCode = 500;
         context.Response.ContentType = "application/json";
@@ -185,6 +189,17 @@ app.MapGet("/health", () =>
 {
     Console.WriteLine($"Health check requested at {DateTime.UtcNow}");
     return Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow });
+});
+
+// Root endpoint for testing
+app.MapGet("/", () => 
+{
+    Console.WriteLine($"Root endpoint requested at {DateTime.UtcNow}");
+    return Results.Ok(new { 
+        status = "running", 
+        message = "JakeScerriPFTC_Assignment API",
+        timestamp = DateTime.UtcNow 
+    });
 });
 
 Console.WriteLine($"Application starting in {app.Environment.EnvironmentName} environment on URL: http://0.0.0.0:{port}");
