@@ -1,5 +1,6 @@
 // Services/RedisService.cs
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using JakeScerriPFTC_Assignment.Models;
@@ -17,11 +18,14 @@ namespace JakeScerriPFTC_Assignment.Services
         private readonly Lazy<ConnectionMultiplexer> _redisConnection;
         private readonly string _instanceName;
         
-        // Fallback in-memory storage
-        private readonly Dictionary<string, string> _inMemoryCache = new Dictionary<string, string>();
-        private readonly HashSet<string> _openTickets = new HashSet<string>();
-        private readonly HashSet<string> _closedTickets = new HashSet<string>();
-        private readonly Dictionary<string, HashSet<string>> _priorityTickets = new Dictionary<string, HashSet<string>>();
+        // Thread-safe collections for fallback in-memory storage
+        private readonly ConcurrentDictionary<string, string> _inMemoryCache = new ConcurrentDictionary<string, string>();
+        private readonly ConcurrentDictionary<string, byte> _openTickets = new ConcurrentDictionary<string, byte>();
+        private readonly ConcurrentDictionary<string, byte> _closedTickets = new ConcurrentDictionary<string, byte>();
+        private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _priorityTickets = 
+            new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>();
+        
+        private readonly object _lock = new object();
         private bool _useRedis = true;
 
         public RedisService(IConfiguration configuration, ILogger<RedisService> logger)
@@ -30,10 +34,10 @@ namespace JakeScerriPFTC_Assignment.Services
             _configuration = configuration;
             _instanceName = configuration["Redis:InstanceName"] ?? "TicketSystem:";
             
-            // Initialize priority sets
-            _priorityTickets["high"] = new HashSet<string>();
-            _priorityTickets["medium"] = new HashSet<string>();
-            _priorityTickets["low"] = new HashSet<string>();
+            // Initialize priority dictionaries
+            _priorityTickets["high"] = new ConcurrentDictionary<string, byte>();
+            _priorityTickets["medium"] = new ConcurrentDictionary<string, byte>();
+            _priorityTickets["low"] = new ConcurrentDictionary<string, byte>();
             
             try
             {
@@ -141,21 +145,21 @@ namespace JakeScerriPFTC_Assignment.Services
                     }
                 }
                 
-                // Fallback to in-memory storage
+                // Fallback to in-memory storage with thread-safety
                 _inMemoryCache[key] = serializedTicket;
                 
                 // Add to appropriate in-memory sets
                 if (ticket.Status == TicketStatus.Open)
                 {
-                    _openTickets.Add(ticket.Id);
+                    _openTickets[ticket.Id] = 1;
                 }
                 else if (ticket.Status == TicketStatus.Closed)
                 {
-                    _closedTickets.Add(ticket.Id);
+                    _closedTickets[ticket.Id] = 1;
                 }
                 
                 // Add to priority set
-                _priorityTickets[priorityKey].Add(ticket.Id);
+                _priorityTickets[priorityKey][ticket.Id] = 1;
                 
                 _logger.LogInformation($"Ticket {ticket.Id} saved to in-memory storage successfully");
             }
@@ -259,7 +263,7 @@ namespace JakeScerriPFTC_Assignment.Services
                 }
                 
                 // Fallback to in-memory storage
-                foreach (var memoryTicketId in _openTickets)
+                foreach (var memoryTicketId in _openTickets.Keys)
                 {
                     var ticket = await GetTicketAsync(memoryTicketId);
                     if (ticket != null)
@@ -323,7 +327,7 @@ namespace JakeScerriPFTC_Assignment.Services
                 // Fallback to in-memory storage
                 if (_priorityTickets.TryGetValue(priorityString, out var memoryTicketIds))
                 {
-                    foreach (var memoryTicketId in memoryTicketIds)
+                    foreach (var memoryTicketId in memoryTicketIds.Keys)
                     {
                         var ticket = await GetTicketAsync(memoryTicketId);
                         if (ticket != null)
@@ -388,9 +392,9 @@ namespace JakeScerriPFTC_Assignment.Services
                     }
                 }
                 
-                // Fallback to in-memory storage
-                _openTickets.Remove(ticketId);
-                _closedTickets.Add(ticketId);
+                // Fallback to in-memory storage - thread-safe version
+                _openTickets.TryRemove(ticketId, out _);
+                _closedTickets[ticketId] = 1;
                 
                 _logger.LogInformation($"Ticket {ticketId} closed in in-memory storage successfully");
             }
@@ -461,7 +465,7 @@ namespace JakeScerriPFTC_Assignment.Services
                 // Fallback to in-memory storage
                 var memoryClosedIdsToRemove = new List<string>();
                 
-                foreach (var memoryClosedId in _closedTickets)
+                foreach (var memoryClosedId in _closedTickets.Keys)
                 {
                     var ticket = await GetTicketAsync(memoryClosedId);
                     if (ticket != null)
@@ -475,13 +479,13 @@ namespace JakeScerriPFTC_Assignment.Services
                             
                             // Remove from storage
                             string key = FormatKey($"ticket:{ticket.Id}");
-                            _inMemoryCache.Remove(key);
+                            _inMemoryCache.TryRemove(key, out _);
                             
                             // Remove from priority set
                             string memoryPriorityKey = ticket.Priority.ToString().ToLower();
                             if (_priorityTickets.TryGetValue(memoryPriorityKey, out var prioritySet))
                             {
-                                prioritySet.Remove(ticket.Id);
+                                prioritySet.TryRemove(ticket.Id, out _);
                             }
                         }
                     }
@@ -490,7 +494,7 @@ namespace JakeScerriPFTC_Assignment.Services
                 // Remove from closed tickets set
                 foreach (var idToRemove in memoryClosedIdsToRemove)
                 {
-                    _closedTickets.Remove(idToRemove);
+                    _closedTickets.TryRemove(idToRemove, out _);
                 }
                 
                 _logger.LogInformation($"Removed {ticketsToArchive.Count} old closed tickets from in-memory storage");
