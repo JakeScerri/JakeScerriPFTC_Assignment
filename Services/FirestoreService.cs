@@ -15,13 +15,42 @@ namespace JakeScerriPFTC_Assignment.Services
        private readonly string _usersCollection = "users";
        private readonly string _ticketArchiveCollection = "ticket-archives";
        private readonly ILogger<FirestoreService> _logger;
+       private readonly IConfiguration _configuration;
 
        public FirestoreService(IConfiguration configuration, ILogger<FirestoreService> logger)
        {
-           string projectId = configuration["GoogleCloud:ProjectId"];
+           _configuration = configuration;
            _logger = logger;
-           _logger.LogInformation($"Initializing FirestoreService with project: {projectId}");
-           _firestoreDb = FirestoreDb.Create(projectId);
+           string projectId = configuration["GoogleCloud:ProjectId"];
+           
+           try
+           {
+               _logger.LogInformation($"Initializing FirestoreService with project: {projectId}");
+               
+               // Use builder pattern for better control and flexibility
+               var builder = new FirestoreDbBuilder
+               {
+                   ProjectId = projectId
+               };
+               
+               _logger.LogInformation($"Creating Firestore instance for project {projectId}");
+               _firestoreDb = builder.Build();
+               
+               _logger.LogInformation("Firestore initialized successfully");
+           }
+           catch (Exception ex)
+           {
+               _logger.LogError(ex, $"Error initializing Firestore: {ex.Message}");
+               if (ex.InnerException != null)
+               {
+                   _logger.LogError($"Inner exception: {ex.InnerException.Message}");
+               }
+               
+               string credPath = Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS");
+               _logger.LogError($"GOOGLE_APPLICATION_CREDENTIALS: {(string.IsNullOrEmpty(credPath) ? "Not set" : credPath)}");
+               
+               throw; // Re-throw to prevent app from starting with broken Firestore
+           }
        }
 
        // Modified to properly handle role preservation
@@ -83,6 +112,14 @@ namespace JakeScerriPFTC_Assignment.Services
            catch (Exception ex)
            {
                _logger.LogError(ex, $"Error saving user: {email}");
+               
+               // Log more details about the error
+               _logger.LogError($"Exception type: {ex.GetType().Name}");
+               if (ex.InnerException != null)
+               {
+                   _logger.LogError($"Inner exception: {ex.InnerException.Message}");
+               }
+               
                throw;
            }
        }
@@ -94,6 +131,8 @@ namespace JakeScerriPFTC_Assignment.Services
            {
                _logger.LogInformation($"Getting user: {email}");
                DocumentReference docRef = _firestoreDb.Collection(_usersCollection).Document(email);
+               
+               _logger.LogInformation($"Fetching snapshot for user: {email}");
                DocumentSnapshot snapshot = await docRef.GetSnapshotAsync();
                
                if (snapshot.Exists)
@@ -129,6 +168,14 @@ namespace JakeScerriPFTC_Assignment.Services
            catch (Exception ex)
            {
                _logger.LogError(ex, $"Error getting user: {email}");
+               
+               // Log more details about the error
+               _logger.LogError($"Exception type: {ex.GetType().Name}");
+               if (ex.InnerException != null)
+               {
+                   _logger.LogError($"Inner exception: {ex.InnerException.Message}");
+               }
+               
                throw;
            }
        }
@@ -156,6 +203,14 @@ namespace JakeScerriPFTC_Assignment.Services
            catch (Exception ex)
            {
                _logger.LogError(ex, $"Error updating user: {user.Email}");
+               
+               // Log more details about the error
+               _logger.LogError($"Exception type: {ex.GetType().Name}");
+               if (ex.InnerException != null)
+               {
+                   _logger.LogError($"Inner exception: {ex.InnerException.Message}");
+               }
+               
                throw;
            }
        }
@@ -201,6 +256,14 @@ namespace JakeScerriPFTC_Assignment.Services
            catch (Exception ex)
            {
                _logger.LogError(ex, "Error getting technicians");
+               
+               // Log more details about the error
+               _logger.LogError($"Exception type: {ex.GetType().Name}");
+               if (ex.InnerException != null)
+               {
+                   _logger.LogError($"Inner exception: {ex.InnerException.Message}");
+               }
+               
                throw;
            }
        }
@@ -235,7 +298,44 @@ namespace JakeScerriPFTC_Assignment.Services
            catch (Exception ex)
            {
                _logger.LogError(ex, $"Error archiving ticket: {ticket.Id}");
+               
+               // Log more details about the error
+               _logger.LogError($"Exception type: {ex.GetType().Name}");
+               if (ex.InnerException != null)
+               {
+                   _logger.LogError($"Inner exception: {ex.InnerException.Message}");
+               }
+               
                throw;
+           }
+       }
+       
+       // Test Firestore connection to check if credentials are working
+       public async Task<bool> TestConnectionAsync()
+       {
+           try
+           {
+               _logger.LogInformation("Testing Firestore connection");
+               
+               // Try to get a single document from the users collection
+               Query query = _firestoreDb.Collection(_usersCollection).Limit(1);
+               QuerySnapshot snapshot = await query.GetSnapshotAsync();
+               
+               _logger.LogInformation($"Firestore connection test successful, found {snapshot.Count} documents");
+               return true;
+           }
+           catch (Exception ex)
+           {
+               _logger.LogError(ex, "Firestore connection test failed");
+               
+               // Log more details about the error
+               _logger.LogError($"Exception type: {ex.GetType().Name}");
+               if (ex.InnerException != null)
+               {
+                   _logger.LogError($"Inner exception: {ex.InnerException.Message}");
+               }
+               
+               return false;
            }
        }
    }

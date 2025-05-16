@@ -2,33 +2,40 @@
 using JakeScerriPFTC_Assignment.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 
-// Force Production mode at the very beginning of the application
-Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Production");
-Environment.SetEnvironmentVariable("DOTNET_ENVIRONMENT", "Production");
+// Start with extensive diagnostics for Cloud Run
+Console.WriteLine("Application starting...");
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+Console.WriteLine($"PORT env var: {port}");
+Console.WriteLine($"GOOGLE_APPLICATION_CREDENTIALS: {Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS")}");
 
-// Log environment variables to help with debugging
-Console.WriteLine($"ASPNETCORE_ENVIRONMENT: {Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")}");
-Console.WriteLine($"DOTNET_ENVIRONMENT: {Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")}");
+// First, create the builder
+var builder = WebApplication.CreateBuilder(args);
 
-// Create the builder with explicit environment name
-var builder = WebApplication.CreateBuilder(new WebApplicationOptions
-{
-    EnvironmentName = "Production" // Explicitly set environment name
-});
+// Explicitly configure to listen on the right port
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// Log builder environment information
-Console.WriteLine($"Builder environment name: {builder.Environment.EnvironmentName}");
+// Log environment information
+Console.WriteLine($"Environment: {builder.Environment.EnvironmentName}");
 Console.WriteLine($"IsDevelopment: {builder.Environment.IsDevelopment()}");
 Console.WriteLine($"IsProduction: {builder.Environment.IsProduction()}");
 
-// Set Google Cloud credentials path only for local development
+// Only set credentials path for local development
 if (builder.Environment.IsDevelopment())
 {
-    Environment.SetEnvironmentVariable(
-        "GOOGLE_APPLICATION_CREDENTIALS",
-        builder.Configuration["GoogleCloud:CredentialsPath"] ?? @"pftc-jake_key.json");
+    string credentialsPath = builder.Configuration["GoogleCloud:CredentialsPath"];
+    Console.WriteLine($"Setting credentials path for local development: {credentialsPath}");
     
-    Console.WriteLine($"GOOGLE_APPLICATION_CREDENTIALS set to: {Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS")}");
+    if (!string.IsNullOrEmpty(credentialsPath))
+    {
+        Environment.SetEnvironmentVariable(
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            credentialsPath);
+    }
+}
+else
+{
+    Console.WriteLine("Running in production environment, using default credentials");
+    Console.WriteLine($"Credentials path: {Environment.GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS")}");
 }
 
 // Add services to the container.
@@ -69,34 +76,116 @@ builder.Services.AddAuthorization();
 // Build the app
 var app = builder.Build();
 
-// Log application environment information
-Console.WriteLine($"Application environment: {app.Environment.EnvironmentName}");
-Console.WriteLine($"App IsDevelopment: {app.Environment.IsDevelopment()}");
-Console.WriteLine($"App IsProduction: {app.Environment.IsProduction()}");
-
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
 }
-else
+
+// In production for Cloud Run, we want to avoid HTTPS redirection
+if (!app.Environment.IsProduction())
 {
-    Console.WriteLine("WARNING: Application is running in Development mode even though we tried to force Production");
+    app.UseHttpsRedirection();
 }
 
-app.UseHttpsRedirection();
 app.UseStaticFiles();
-
 app.UseRouting();
 
 // Add authentication and authorization middleware
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Add a global error handler for debugging
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+        
+        // If not found and part of api/auth/callback, provide details
+        if (context.Response.StatusCode == 404 && 
+            context.Request.Path.Value.Contains("/api/auth/callback"))
+        {
+            Console.WriteLine($"404 Not Found: {context.Request.Method} {context.Request.Path}");
+            context.Response.StatusCode = 200;
+            context.Response.ContentType = "text/html";
+            await context.Response.WriteAsync(@"
+                <html><body>
+                    <h1>Debug - Callback Route Not Found</h1>
+                    <p>The callback route was not registered properly.</p>
+                    <p>Please check your route configuration in Program.cs</p>
+                </body></html>
+            ");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Unhandled exception: {ex.Message}");
+        Console.WriteLine(ex.StackTrace);
+        
+        // Don't rethrow to prevent 500 errors
+        context.Response.StatusCode = 500;
+        context.Response.ContentType = "text/html";
+        await context.Response.WriteAsync($@"
+            <html><body>
+                <h1>Server Error</h1>
+                <p>{ex.Message}</p>
+                <pre>{ex.StackTrace}</pre>
+            </body></html>
+        ");
+    }
+});
+
+// Add a dedicated endpoint for Cloud Scheduler
+app.MapPost("/process-tickets", async (HttpContext context) => 
+{
+    var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+    var ticketProcessor = context.RequestServices.GetRequiredService<TicketProcessorService>();
+    
+    logger.LogInformation("Processing tickets from HTTP request at {Time}", DateTime.UtcNow);
+    
+    try
+    {
+        var result = await ticketProcessor.ProcessTicketsAsync();
+        logger.LogInformation("Ticket processing completed successfully");
+        
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new 
+        { 
+            success = true, 
+            message = "Ticket processing completed successfully",
+            timestamp = DateTime.UtcNow
+        });
+    }
+    catch (Exception ex) 
+    {
+        logger.LogError(ex, "Error processing tickets");
+        
+        context.Response.StatusCode = 500;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new 
+        { 
+            success = false, 
+            error = ex.Message
+        });
+    }
+});
+
+// IMPORTANT: Register MVC routes and attribute-based routing
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
+    
+// Add this line to enable attribute-based routing (essential for API controllers)
+app.MapControllers();
 
-Console.WriteLine($"Application starting in {app.Environment.EnvironmentName} environment");
+// Health check endpoint for Cloud Run
+app.MapGet("/health", () => 
+{
+    Console.WriteLine($"Health check requested at {DateTime.UtcNow}");
+    return Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow });
+});
+
+Console.WriteLine($"Application starting in {app.Environment.EnvironmentName} environment on URL: http://0.0.0.0:{port}");
 app.Run();

@@ -20,7 +20,12 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/app/pftc-jake_key.json
 
 # Set ASP.NET Core environment to Production
 ENV ASPNETCORE_ENVIRONMENT=Production
-# Set URLs to listen on port 8080 (required for Cloud Run)
+
+# Explicitly set PORT environment variable
+ENV PORT=8080
 ENV ASPNETCORE_URLS=http://+:8080
+
+# Add verbose diagnostics for startup
+RUN echo "Container image built on $(date)"
 
 ENTRYPOINT ["dotnet", "JakeScerriPFTC_Assignment.dll"]

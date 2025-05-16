@@ -16,6 +16,7 @@ using JakeScerriPFTC_Assignment.Services;
 namespace JakeScerriPFTC_Assignment.Controllers
 {
     [Route("api/[controller]")]
+    [ApiController] // Added ApiController attribute to ensure proper binding
     public class AuthController : Controller
     {
         private readonly GoogleAuthConfig _authConfig;
@@ -67,7 +68,7 @@ namespace JakeScerriPFTC_Assignment.Controllers
                 // Set the correct redirect URI based on environment
                 if (_environment.IsProduction() && !isRunningLocally)
                 {
-                    _authConfig.RedirectUri = "https://ticket-system-55855542835.europe-west1.run.app/api/auth/callback";
+                    _authConfig.RedirectUri = "https://ticket-system-558556542835.europe-west1.run.app/api/auth/callback";
                     _logger.LogInformation($"Using production redirect URI: {_authConfig.RedirectUri}");
                 }
                 else
@@ -145,6 +146,7 @@ namespace JakeScerriPFTC_Assignment.Controllers
                 await InitializeSecretsAsync();
                 
                 _logger.LogInformation("Creating OAuth authorization URL");
+                _logger.LogInformation($"Using Client ID: {_authConfig.ClientId.Substring(0, 5)}... and Redirect URI: {_authConfig.RedirectUri}");
                 
                 // Create authorization URL
                 var flow = new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
@@ -168,7 +170,9 @@ namespace JakeScerriPFTC_Assignment.Controllers
             }
         }
 
+        // Added explicit Route attribute to ensure it's properly registered
         [HttpGet("callback")]
+        [Route("api/auth/callback")]
         public async Task<IActionResult> Callback([FromQuery] string code)
         {
             try
@@ -297,6 +301,40 @@ namespace JakeScerriPFTC_Assignment.Controllers
                 picture = User.FindFirstValue("Picture"),
                 role = User.FindFirstValue(ClaimTypes.Role)
             });
+        }
+
+        // Added debug endpoint for testing
+        [HttpGet("debug")]
+        public IActionResult Debug()
+        {
+            var isLocal = HttpContext.Request.Host.Host.Contains("localhost") || 
+                          HttpContext.Request.Host.Host.Equals("127.0.0.1");
+            
+            // Initialize _authConfig if not already done
+            if (_authConfig.RedirectUri == null || _authConfig.RedirectUri == "")
+            {
+                try {
+                    InitializeSecretsAsync().Wait();
+                }
+                catch (Exception ex) {
+                    return Content($"Error initializing: {ex.Message}", "text/plain");
+                }
+            }
+            
+            return Content($@"
+                <html><body>
+                    <h1>Environment Debug</h1>
+                    <p>Environment: {_environment.EnvironmentName}</p>
+                    <p>Is Development: {_environment.IsDevelopment()}</p>
+                    <p>Is Production: {_environment.IsProduction()}</p>
+                    <p>Host: {HttpContext.Request.Host}</p>
+                    <p>Is Local (by hostname): {isLocal}</p>
+                    <p>Current Redirect URI: {_authConfig?.RedirectUri ?? "Not initialized"}</p>
+                    <p>Client ID (first 5 chars): {(_authConfig?.ClientId?.Length > 5 ? _authConfig?.ClientId?.Substring(0, 5) + "..." : "Not set")}</p>
+                    <hr>
+                    <p><a href='/api/auth/login'>Test Login</a></p>
+                </body></html>
+            ", "text/html");
         }
     }
 }
