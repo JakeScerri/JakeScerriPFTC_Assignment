@@ -28,7 +28,7 @@ namespace JakeScerriPFTC_Assignment.Controllers
             FirestoreService firestoreService,
             PubSubService pubSubService,
             EmailService emailService,
-            RedisService redisService,  // Add this parameter
+            RedisService redisService,
             ILogger<TicketsController> logger)
         {
             _storageService = storageService;
@@ -36,91 +36,115 @@ namespace JakeScerriPFTC_Assignment.Controllers
             _pubSubService = pubSubService;
             _emailService = emailService;
             _logger = logger;
-            _redisService = redisService;  // Add this assignment
+            _redisService = redisService;
         }
 
-         [HttpPost]
-public async Task<IActionResult> CreateTicket([FromForm] TicketCreateModel model)
-{
-    try
-    {
-        // Get email from authenticated user
-        string userEmail = User.FindFirstValue(ClaimTypes.Email) ?? "anonymous@example.com";
-        
-        _logger.LogInformation($"Creating ticket for user: {userEmail}");
-        
-        // Get the current user and their role before saving
-        var existingUser = await _firestoreService.GetUserByEmailAsync(userEmail);
-        
-        // Ensure user exists in Firestore with their CURRENT role preserved
-        // Pass null as the role to ensure we don't change it
-        await _firestoreService.SaveUserAsync(userEmail, existingUser?.Role);
-        
-        // Upload screenshots to Cloud Storage (AA2.1.c & KU4.3.a)
-        var imageUrls = new List<string>();
-        if (model.Screenshots != null && model.Screenshots.Count > 0)
+        [HttpPost]
+        public async Task<IActionResult> CreateTicket([FromForm] TicketCreateModel model)
         {
-            _logger.LogInformation($"Uploading {model.Screenshots.Count} screenshots");
-            imageUrls = await _storageService.UploadFilesAsync(model.Screenshots, userEmail);
+            try
+            {
+                // Get email from authenticated user
+                string userEmail = User.FindFirstValue(ClaimTypes.Email) ?? "anonymous@example.com";
+                
+                _logger.LogInformation($"Creating ticket for user: {userEmail}");
+                
+                // Get the current user and their role before saving
+                var existingUser = await _firestoreService.GetUserByEmailAsync(userEmail);
+                
+                // Ensure user exists in Firestore with their CURRENT role preserved
+                // Pass null as the role to ensure we don't change it
+                await _firestoreService.SaveUserAsync(userEmail, existingUser?.Role);
+                
+                // Upload screenshots to Cloud Storage (AA2.1.c & KU4.3.a)
+                var imageUrls = new List<string>();
+                if (model.Screenshots != null && model.Screenshots.Count > 0)
+                {
+                    _logger.LogInformation($"Uploading {model.Screenshots.Count} screenshots");
+                    imageUrls = await _storageService.UploadFilesAsync(model.Screenshots, userEmail);
+                }
+                
+                // Create ticket object
+                var ticket = new Ticket
+                {
+                    Title = model.Title,
+                    Description = model.Description,
+                    UserEmail = userEmail,
+                    Priority = model.Priority,
+                    ImageUrls = imageUrls,
+                    Status = TicketStatus.Open,
+                    DateUploaded = DateTime.UtcNow
+                };
+                
+                _logger.LogInformation($"Publishing ticket with priority: {ticket.Priority}");
+                
+                // Publish ticket to PubSub with priority attribute (AA2.1.a & AA2.1.b)
+                var messageId = await _pubSubService.PublishTicketAsync(ticket);
+                
+                // Also save to Redis for immediate access
+                await _redisService.SaveTicketAsync(ticket);
+                
+                return Ok(new 
+                { 
+                    success = true,
+                    message = "Ticket created successfully", 
+                    ticketId = ticket.Id, 
+                    messageId,
+                    imageUrls
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating ticket");
+                return StatusCode(500, new { 
+                    success = false, 
+                    error = ex.Message
+                });
+            }
         }
-        
-        // Create ticket object
-        var ticket = new Ticket
-        {
-            Title = model.Title,
-            Description = model.Description,
-            UserEmail = userEmail,
-            Priority = model.Priority,
-            ImageUrls = imageUrls,
-            Status = TicketStatus.Open,
-            DateUploaded = DateTime.UtcNow
-        };
-        
-        _logger.LogInformation($"Publishing ticket with priority: {ticket.Priority}");
-        
-        // Publish ticket to PubSub with priority attribute (AA2.1.a & AA2.1.b)
-        var messageId = await _pubSubService.PublishTicketAsync(ticket);
-        
-        // Also save to Redis for immediate access
-        await _redisService.SaveTicketAsync(ticket);
-        
-        return Ok(new 
-        { 
-            success = true,
-            message = "Ticket created successfully", 
-            ticketId = ticket.Id, 
-            messageId,
-            imageUrls
-        });
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Error creating ticket");
-        return StatusCode(500, new { 
-            success = false, 
-            error = ex.Message
-        });
-    }
-}
 
         [HttpGet("{id}")]
-        public IActionResult GetTicket(string id)
+        public async Task<IActionResult> GetTicket(string id)
         {
-            // Get current user role
-            bool isTechnician = User.IsInRole("Technician");
-            string userEmail = User.FindFirstValue(ClaimTypes.Email);
-            
-            _logger.LogInformation($"User {userEmail} (Technician: {isTechnician}) accessing ticket {id}");
-            
-            // In a real implementation, you would:
-            // 1. Fetch the ticket from database
-            // 2. Check if user is allowed to view it (technician or ticket owner)
-            
-            return Ok(new { 
-                message = $"Viewing ticket {id}",
-                userRole = isTechnician ? "Technician" : "User",
-                userEmail = userEmail
-            });
+            try 
+            {
+                // Get current user role
+                bool isTechnician = User.IsInRole("Technician");
+                string userEmail = User.FindFirstValue(ClaimTypes.Email);
+                
+                _logger.LogInformation($"User {userEmail} (Technician: {isTechnician}) accessing ticket {id}");
+                
+                // Fetch the ticket from Redis
+                var ticket = await _redisService.GetTicketAsync(id);
+                
+                if (ticket == null)
+                {
+                    return NotFound(new { 
+                        success = false, 
+                        error = $"Ticket {id} not found" 
+                    });
+                }
+                
+                // Check if user is allowed to view this ticket
+                // Technicians can view all tickets, users can only view their own
+                if (!isTechnician && ticket.UserEmail != userEmail)
+                {
+                    return Forbid();
+                }
+                
+                return Ok(new { 
+                    success = true,
+                    ticket = ticket
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error getting ticket {id}");
+                return StatusCode(500, new { 
+                    success = false, 
+                    error = ex.Message
+                });
+            }
         }
         
         [HttpPost("{id}/close")]
@@ -156,6 +180,10 @@ public async Task<IActionResult> CreateTicket([FromForm] TicketCreateModel model
                     await _firestoreService.ArchiveTicketAsync(ticket, technicianEmail);
                     _logger.LogInformation($"Ticket {id} archived to Firestore (older than 1 week)");
                 }
+                
+                // Acknowledge the message in PubSub to remove it
+                await _pubSubService.AcknowledgeTicketAsync(id, ticket.Priority);
+                _logger.LogInformation($"Ticket {id} acknowledged in PubSub");
         
                 return Ok(new { 
                     success = true,
@@ -165,7 +193,10 @@ public async Task<IActionResult> CreateTicket([FromForm] TicketCreateModel model
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error closing ticket {id}");
-                return StatusCode(500, $"An error occurred: {ex.Message}");
+                return StatusCode(500, new {
+                    success = false,
+                    error = $"An error occurred: {ex.Message}"
+                });
             }
         }
 
@@ -179,33 +210,31 @@ public async Task<IActionResult> CreateTicket([FromForm] TicketCreateModel model
                 
                 _logger.LogInformation($"Technician {technicianEmail} sending notification for ticket {id}");
                 
-                // In a real implementation, you would:
-                // 1. Fetch the ticket from database
-                // 2. Send email notification
-                
-                // For testing, create a simulated ticket
-                var ticket = new Ticket
+                // Get the ticket from Redis
+                var ticket = await _redisService.GetTicketAsync(id);
+                if (ticket == null)
                 {
-                    Id = id,
-                    Title = "Test Ticket",
-                    Description = "This is a test ticket for email notification",
-                    UserEmail = "testuser@example.com",
-                    Priority = TicketPriority.High,
-                    DateUploaded = DateTime.UtcNow,
-                    Status = TicketStatus.Open
-                };
+                    return NotFound(new { 
+                        success = false, 
+                        error = $"Ticket {id} not found" 
+                    });
+                }
                 
                 // Send email notification
                 await _emailService.SendTicketNotificationAsync(ticket);
                 
                 return Ok(new { 
+                    success = true,
                     message = $"Email notification sent for ticket {id}"
                 });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error sending notification for ticket {id}");
-                return StatusCode(500, $"An error occurred: {ex.Message}");
+                return StatusCode(500, new {
+                    success = false,
+                    error = $"An error occurred: {ex.Message}"
+                });
             }
         }
     }

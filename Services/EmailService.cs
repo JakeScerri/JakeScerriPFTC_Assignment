@@ -1,4 +1,4 @@
-// Services/EmailService.cs
+// Services/EmailService.cs - Complete implementation
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
@@ -17,72 +17,35 @@ namespace JakeScerriPFTC_Assignment.Services
         private readonly string _domain;
         private readonly string _fromEmail;
         private readonly ILogger<EmailService> _logger;
-        private readonly SecretManagerService _secretManagerService;
         private readonly FirestoreService _firestoreService;
         private readonly HttpClient _httpClient;
-        private bool _secretsInitialized;
 
         public EmailService(
             IConfiguration configuration,
             ILogger<EmailService> logger,
-            SecretManagerService secretManagerService,
             FirestoreService firestoreService)
         {
             _logger = logger;
-            _secretManagerService = secretManagerService;
             _firestoreService = firestoreService;
-            _httpClient = new HttpClient();
-            _secretsInitialized = false;
             
-            // Initialize directly in constructor
-            _apiKey = configuration["MailGun:ApiKey"] ?? "";
-            _domain = configuration["MailGun:Domain"] ?? "";
-            _fromEmail = configuration["MailGun:FromEmail"] ?? "support@example.com";
-        }
-
-        private async Task InitializeSecretsAsync()
-        {
-            if (!_secretsInitialized)
-            {
-                try
-                {
-                    _logger.LogInformation("Loading MailGun secrets from Secret Manager");
-                    
-                    // Create local variables to hold secret values
-                    string apiKey = _apiKey;
-                    string domain = _domain;
-                    
-                    // Try to load secrets from Secret Manager (if not already in config)
-                    if (string.IsNullOrEmpty(apiKey))
-                    {
-                        apiKey = await _secretManagerService.GetSecretAsync("mailgun-api-key");
-                    }
-                    
-                    if (string.IsNullOrEmpty(domain))
-                    {
-                        domain = await _secretManagerService.GetSecretAsync("mailgun-domain");
-                    }
-                    
-                    // Use reflection to set readonly fields (if needed in a real project)
-                    // For this assignment, we'll assume the values are set in appsettings.json
-                    
-                    _secretsInitialized = true;
-                    _logger.LogInformation("MailGun secrets loaded successfully");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to load MailGun secrets from Secret Manager");
-                }
-            }
+            // Initialize from configuration
+            _apiKey = configuration["GoogleCloud:MailGun:ApiKey"];
+            _domain = configuration["GoogleCloud:MailGun:Domain"];
+            _fromEmail = configuration["GoogleCloud:MailGun:FromEmail"] ?? "support@example.com";
+            
+            _logger.LogInformation("EmailService initialized");
+            
+            // Initialize HttpClient
+            _httpClient = new HttpClient();
         }
 
         public async Task SendTicketNotificationAsync(Ticket ticket)
         {
             try
             {
-                await InitializeSecretsAsync();
+                _logger.LogInformation($"Preparing to send notification for ticket: {ticket.Id}");
                 
-                // Get all technicians to send notifications to
+                // Get all technicians
                 var technicians = await _firestoreService.GetTechniciansAsync();
                 
                 if (technicians == null || technicians.Count == 0)
@@ -105,7 +68,7 @@ namespace JakeScerriPFTC_Assignment.Services
                     <p><strong>Date Submitted:</strong> {ticket.DateUploaded}</p>
                 ";
 
-                if (ticket.ImageUrls.Count > 0)
+                if (ticket.ImageUrls != null && ticket.ImageUrls.Count > 0)
                 {
                     messageBody += "<p><strong>Attached Screenshots:</strong></p><ul>";
                     foreach (var imageUrl in ticket.ImageUrls)
@@ -122,20 +85,13 @@ namespace JakeScerriPFTC_Assignment.Services
                 {
                     try
                     {
-                        var response = await SendMailgunEmailAsync(
+                        await SendMailgunEmailAsync(
                             _fromEmail,
                             technician.Email,
                             subject,
                             messageBody
                         );
                         
-                        _logger.LogInformation(
-                            "Email sent to {TechnicianEmail} for Ticket {TicketId}.", 
-                            technician.Email, 
-                            ticket.Id);
-                            
-                        // Log information with ticket ID as correlation key (SE4.6.e)
-                        // Note: In a real implementation, you'd use Google Cloud Logging here
                         _logger.LogInformation(
                             "Email notification for Ticket {TicketId} sent to {Recipient} at {Timestamp}", 
                             ticket.Id, 

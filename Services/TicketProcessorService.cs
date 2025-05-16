@@ -18,6 +18,7 @@ namespace JakeScerriPFTC_Assignment.Services
         private readonly RedisService _redisService;
         private readonly EmailService _emailService;
         private readonly FirestoreService _firestoreService;
+        private readonly PubSubService _pubSubService;
         private readonly string _projectId;
         private readonly string _topicName;
         
@@ -26,13 +27,15 @@ namespace JakeScerriPFTC_Assignment.Services
             IConfiguration configuration,
             RedisService redisService,
             EmailService emailService,
-            FirestoreService firestoreService)
+            FirestoreService firestoreService,
+            PubSubService pubSubService)
         {
             _logger = logger;
             _configuration = configuration;
             _redisService = redisService;
             _emailService = emailService;
             _firestoreService = firestoreService;
+            _pubSubService = pubSubService;
             
             _projectId = configuration["GoogleCloud:ProjectId"];
             _topicName = configuration["GoogleCloud:TopicName"] ?? "tickets-topic-jakescerri";
@@ -103,13 +106,21 @@ namespace JakeScerriPFTC_Assignment.Services
                     await _redisService.SaveTicketAsync(ticket);
                     
                     // Send email notification to technicians (SE4.6.d)
-                    await _emailService.SendTicketNotificationAsync(ticket);
-                    
-                    // Log email sent (SE4.6.e)
-                    _logger.LogInformation(
-                        "Email notification for Ticket {TicketId} sent with {Priority} priority",
-                        ticket.Id,
-                        priorityString);
+                    try 
+                    {
+                        await _emailService.SendTicketNotificationAsync(ticket);
+                        
+                        // Log email sent (SE4.6.e)
+                        _logger.LogInformation(
+                            "Email notification for Ticket {TicketId} sent with {Priority} priority",
+                            ticket.Id,
+                            priorityString);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to send email notification for ticket {TicketId}, but continuing processing", ticket.Id);
+                        // Continue processing - don't let email failure stop the process
+                    }
                     
                     processedTickets = true;
                 }
@@ -142,7 +153,10 @@ namespace JakeScerriPFTC_Assignment.Services
                     
                     await _firestoreService.ArchiveTicketAsync(ticket, technicianEmail);
                     
-                    _logger.LogInformation($"Ticket {ticket.Id} archived successfully");
+                    // Also acknowledge in PubSub to fully remove
+                    await _pubSubService.AcknowledgeTicketAsync(ticket.Id, ticket.Priority);
+                    
+                    _logger.LogInformation($"Ticket {ticket.Id} archived successfully and acknowledged in PubSub");
                 }
                 
                 _logger.LogInformation($"Archived {ticketsToArchive.Count} old closed tickets");
@@ -154,134 +168,133 @@ namespace JakeScerriPFTC_Assignment.Services
             }
         }
         
-        // This is a placeholder method to simulate getting tickets from PubSub
-        // In a real implementation, you would use the PubSub client to pull messages
-       // Replace the placeholder GetTicketsFromPubSubAsync method with this implementation
-       private async Task<List<Ticket>> GetTicketsFromPubSubAsync(TicketPriority priority)
-{
-    try
-    {
-        string priorityString = priority.ToString().ToLower();
-        _logger.LogInformation($"Pulling {priorityString} priority tickets from PubSub");
-        
-        // Create a subscriber client
-        string projectId = _configuration["GoogleCloud:ProjectId"];
-        string subscriptionId = $"{_topicName}-{priorityString}-sub";
-        
-        // Create proper SubscriptionName object
-        var subscriptionName = new SubscriptionName(projectId, subscriptionId);
-        
-        _logger.LogInformation($"Using subscription: {subscriptionName}");
-        
-        // Create a subscriber client
-        SubscriberServiceApiClient subscriberClient = await SubscriberServiceApiClient.CreateAsync();
-        
-        // Make sure the subscription exists (create it if it doesn't)
-        try
-        {
-            // Try to get the subscription
-            var subscription = await subscriberClient.GetSubscriptionAsync(
-                new GetSubscriptionRequest { Subscription = subscriptionName.ToString() });
-            
-            _logger.LogInformation($"Found existing subscription: {subscriptionName}");
-        }
-        catch (Exception ex)
-        {
-            // Subscription doesn't exist, so create it
-            _logger.LogInformation($"Subscription not found, creating: {subscriptionName}");
-            
-            // Create the topic name
-            var topicName = new TopicName(projectId, _topicName);
-            
-            // Create the subscription with a filter for the priority
-            var subscriptionRequest = new Subscription
-            {
-                SubscriptionName = subscriptionName,
-                TopicAsTopicName = topicName,
-                Filter = $"attributes.priority = \"{priorityString}\"",
-                AckDeadlineSeconds = 60
-            };
-            
-            try
-            {
-                await subscriberClient.CreateSubscriptionAsync(subscriptionRequest);
-                _logger.LogInformation($"Created subscription: {subscriptionName}");
-            }
-            catch (Exception createEx)
-            {
-                _logger.LogError(createEx, $"Error creating subscription: {subscriptionName}");
-                throw;
-            }
-        }
-        
-        // Create a subscriber client to pull messages
-        var pullRequest = new PullRequest
-        {
-            SubscriptionAsSubscriptionName = subscriptionName,
-            MaxMessages = 10
-        };
-        
-        // Pull messages
-        var pullResponse = await subscriberClient.PullAsync(pullRequest);
-        var messages = pullResponse.ReceivedMessages;
-        
-        _logger.LogInformation($"Pulled {messages.Count} messages from subscription {subscriptionName}");
-        
-        // Process messages and create tickets
-        var tickets = new List<Ticket>();
-        var ackIds = new List<string>();
-        
-        foreach (var message in messages)
+        // Method to get tickets from PubSub
+        private async Task<List<Ticket>> GetTicketsFromPubSubAsync(TicketPriority priority)
         {
             try
             {
-                // Get the ticket JSON from the message
-                string ticketJson = message.Message.Data.ToStringUtf8();
+                string priorityString = priority.ToString().ToLower();
+                _logger.LogInformation($"Pulling {priorityString} priority tickets from PubSub");
                 
-                // Deserialize to a Ticket object
-                var ticket = JsonConvert.DeserializeObject<Ticket>(ticketJson);
+                // Create a subscriber client
+                string projectId = _configuration["GoogleCloud:ProjectId"];
+                string subscriptionId = $"{_topicName}-{priorityString}-sub";
                 
-                // Verify this ticket has the correct priority 
-                // (Should be guaranteed by subscription filter, but double-check)
-                if (ticket.Priority == priority)
+                // Create proper SubscriptionName object
+                var subscriptionName = new SubscriptionName(projectId, subscriptionId);
+                
+                _logger.LogInformation($"Using subscription: {subscriptionName}");
+                
+                // Create a subscriber client
+                SubscriberServiceApiClient subscriberClient = null;
+                try
                 {
-                    tickets.Add(ticket);
+                    subscriberClient = await SubscriberServiceApiClient.CreateAsync();
                     
-                    // Add the ack ID to acknowledge later
-                    ackIds.Add(message.AckId);
+                    // Make sure the subscription exists (create it if it doesn't)
+                    try
+                    {
+                        // Try to get the subscription
+                        var subscription = await subscriberClient.GetSubscriptionAsync(
+                            new GetSubscriptionRequest { Subscription = subscriptionName.ToString() });
+                        
+                        _logger.LogInformation($"Found existing subscription: {subscriptionName}");
+                    }
+                    catch (Exception ex)
+                    {
+                        // Subscription doesn't exist, so create it
+                        _logger.LogInformation($"Subscription not found, creating: {subscriptionName}");
+                        
+                        // Create the topic name
+                        var topicName = new TopicName(projectId, _topicName);
+                        
+                        // Create the subscription with a filter for the priority
+                        var subscriptionRequest = new Subscription
+                        {
+                            SubscriptionName = subscriptionName,
+                            TopicAsTopicName = topicName,
+                            Filter = $"attributes.priority = \"{priorityString}\"",
+                            AckDeadlineSeconds = 60
+                        };
+                        
+                        try
+                        {
+                            await subscriberClient.CreateSubscriptionAsync(subscriptionRequest);
+                            _logger.LogInformation($"Created subscription: {subscriptionName}");
+                        }
+                        catch (Exception createEx)
+                        {
+                            _logger.LogError(createEx, $"Error creating subscription: {subscriptionName}");
+                            throw;
+                        }
+                    }
+                    
+                    // Create a subscriber client to pull messages
+                    var pullRequest = new PullRequest
+                    {
+                        SubscriptionAsSubscriptionName = subscriptionName,
+                        MaxMessages = 10
+                    };
+                    
+                    // Pull messages
+                    var pullResponse = await subscriberClient.PullAsync(pullRequest);
+                    var messages = pullResponse.ReceivedMessages;
+                    
+                    _logger.LogInformation($"Pulled {messages.Count} messages from subscription {subscriptionName}");
+                    
+                    // Process messages and create tickets
+                    var tickets = new List<Ticket>();
+                    
+                    foreach (var message in messages)
+                    {
+                        try
+                        {
+                            // Get the ticket JSON from the message
+                            string ticketJson = message.Message.Data.ToStringUtf8();
+                            
+                            // Deserialize to a Ticket object
+                            var ticket = JsonConvert.DeserializeObject<Ticket>(ticketJson);
+                            
+                            // Verify this ticket has the correct priority 
+                            // (Should be guaranteed by subscription filter, but double-check)
+                            if (ticket.Priority == priority)
+                            {
+                                tickets.Add(ticket);
+                                
+                                // Register the message ack ID with the PubSubService for later acknowledgement
+                                _pubSubService.RegisterMessageId(ticket.Id, ticket.Priority, message.Message.MessageId, message.AckId);
+                            }
+                            else
+                            {
+                                _logger.LogWarning($"Ticket {ticket.Id} has priority {ticket.Priority} but was pulled from {priorityString} subscription");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, $"Error processing message: {ex.Message}");
+                        }
+                    }
+                    
+                    // Note: We're NOT acknowledging messages here anymore
+                    // We only register them, so they can be acknowledged when tickets are closed
+                    
+                    _logger.LogInformation($"Processed {tickets.Count} {priorityString} tickets from PubSub without acknowledging");
+                    return tickets;
                 }
-                else
+                finally
                 {
-                    _logger.LogWarning($"Ticket {ticket.Id} has priority {ticket.Priority} but was pulled from {priorityString} subscription");
+                    // Clean up if client implements IDisposable
+                    if (subscriberClient != null && subscriberClient is IDisposable disposable)
+                    {
+                        disposable.Dispose();
+                    }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error processing message: {ex.Message}");
+                _logger.LogError(ex, $"Error pulling {priority} priority tickets from PubSub");
+                throw;
             }
         }
-        
-        // Acknowledge messages if any were processed
-        if (ackIds.Count > 0)
-        {
-            var ackRequest = new AcknowledgeRequest
-            {
-                SubscriptionAsSubscriptionName = subscriptionName,
-                AckIds = { ackIds }
-            };
-            
-            await subscriberClient.AcknowledgeAsync(ackRequest);
-            _logger.LogInformation($"Acknowledged {ackIds.Count} messages");
-        }
-        
-        _logger.LogInformation($"Processed {tickets.Count} {priorityString} tickets from PubSub");
-        return tickets;
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, $"Error pulling {priority} priority tickets from PubSub");
-        throw;
-    }
-}
     }
 }

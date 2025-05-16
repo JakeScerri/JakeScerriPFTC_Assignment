@@ -17,14 +17,14 @@
             <hr>
             
             <h4>Technician Dashboard</h4>
-            <p>This would display a dashboard of all tickets requiring technician attention.</p>
+            <p>Tickets requiring technician attention by priority:</p>
             
             <div class="row">
                 <div class="col-md-4">
                     <div class="card bg-danger text-white mb-3">
                         <div class="card-body">
                             <h5 class="card-title">High Priority</h5>
-                            <p class="card-text">0 tickets</p>
+                            <p id="highPriorityCount" class="card-text">0 tickets</p>
                         </div>
                     </div>
                 </div>
@@ -32,7 +32,7 @@
                     <div class="card bg-warning text-dark mb-3">
                         <div class="card-body">
                             <h5 class="card-title">Medium Priority</h5>
-                            <p class="card-text">0 tickets</p>
+                            <p id="mediumPriorityCount" class="card-text">0 tickets</p>
                         </div>
                     </div>
                 </div>
@@ -40,8 +40,34 @@
                     <div class="card bg-success text-white mb-3">
                         <div class="card-body">
                             <h5 class="card-title">Low Priority</h5>
-                            <p class="card-text">0 tickets</p>
+                            <p id="lowPriorityCount" class="card-text">0 tickets</p>
                         </div>
+                    </div>
+                </div>
+            </div>
+            
+            <hr>
+            
+            <!-- Active tickets section -->
+            <h4>Active Tickets</h4>
+            <div id="ticketsContainer" class="mt-3">
+                <div class="d-flex justify-content-between mb-2">
+                    <button id="refreshTicketsBtn" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh Tickets
+                    </button>
+                    <div>
+                        <button id="filterAllBtn" class="btn btn-outline-secondary btn-sm active">All</button>
+                        <button id="filterHighBtn" class="btn btn-outline-danger btn-sm">High</button>
+                        <button id="filterMediumBtn" class="btn btn-outline-warning btn-sm">Medium</button> 
+                        <button id="filterLowBtn" class="btn btn-outline-success btn-sm">Low</button>
+                    </div>
+                </div>
+                <div id="ticketsList" class="list-group">
+                    <div class="text-center py-3">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading tickets...</p>
                     </div>
                 </div>
             </div>
@@ -75,7 +101,311 @@
 @section Scripts {
     <script>
         $(document).ready(function() {
+            // Load tickets on page load
+            loadDashboard();
+            loadAllTickets();
+            
+            // Refresh tickets button
+            $('#refreshTicketsBtn').click(function() {
+                loadDashboard();
+                loadAllTickets();
+            });
+            
+            // Filter buttons
+            $('#filterAllBtn').click(function() {
+                $(this).addClass('active').siblings().removeClass('active');
+                loadAllTickets();
+            });
+            
+            $('#filterHighBtn').click(function() {
+                $(this).addClass('active').siblings().removeClass('active');
+                loadTicketsByPriority('High');
+            });
+            
+            $('#filterMediumBtn').click(function() {
+                $(this).addClass('active').siblings().removeClass('active');
+                loadTicketsByPriority('Medium');
+            });
+            
+            $('#filterLowBtn').click(function() {
+                $(this).addClass('active').siblings().removeClass('active');
+                loadTicketsByPriority('Low');
+            });
+            
+            // Load dashboard data
+            function loadDashboard() {
+                $.ajax({
+                    url: '/api/technicians/dashboard',
+                    type: 'GET',
+                    success: function(data) {
+                        if (data.success) {
+                            // Update ticket counts
+                            $('#highPriorityCount').text(data.ticketCounts.high + ' tickets');
+                            $('#mediumPriorityCount').text(data.ticketCounts.medium + ' tickets');
+                            $('#lowPriorityCount').text(data.ticketCounts.low + ' tickets');
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('Error loading dashboard:', error);
+                    }
+                });
+            }
+            
+            // Load all tickets
+            function loadAllTickets() {
+                $('#ticketsList').html(`
+                    <div class="text-center py-3">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading tickets...</p>
+                    </div>
+                `);
+                
+                $.ajax({
+                    url: '/api/technicians/tickets',
+                    type: 'GET',
+                    success: function(data) {
+                        displayTickets(data.tickets);
+                    },
+                    error: function(xhr, status, error) {
+                        $('#ticketsList').html(`
+                            <div class="alert alert-danger">
+                                Error loading tickets: ${xhr.responseJSON?.error || error}
+                            </div>
+                        `);
+                    }
+                });
+            }
+            
+            // Load tickets by priority
+            function loadTicketsByPriority(priority) {
+                $('#ticketsList').html(`
+                    <div class="text-center py-3">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading ${priority} priority tickets...</p>
+                    </div>
+                `);
+                
+                $.ajax({
+                    url: `/api/technicians/tickets/priority/${priority}`,
+                    type: 'GET',
+                    success: function(data) {
+                        displayTickets(data.tickets);
+                    },
+                    error: function(xhr, status, error) {
+                        $('#ticketsList').html(`
+                            <div class="alert alert-danger">
+                                Error loading tickets: ${xhr.responseJSON?.error || error}
+                            </div>
+                        `);
+                    }
+                });
+            }
+
+            // Display tickets in the list
+            function displayTickets(tickets) {
+                if (!tickets || tickets.length === 0) {
+                    $('#ticketsList').html(`
+                        <div class="alert alert-info">
+                            No tickets found.
+                        </div>
+                    `);
+                    return;
+                }
+
+                let html = '';
+
+                tickets.forEach(function(ticket) {
+                    // Determine badge color based on priority
+                    let badgeClass = 'bg-secondary';
+                    if (ticket.priority === 0) badgeClass = 'bg-danger';
+                    if (ticket.priority === 1) badgeClass = 'bg-warning text-dark';
+                    if (ticket.priority === 2) badgeClass = 'bg-success';
+
+                    // Format date
+                    let date = new Date(ticket.dateUploaded);
+                    let formattedDate = date.toLocaleString();
+
+                    // Build ticket item HTML
+                    html += `
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h5 class="mb-1">${ticket.title}</h5>
+                                <small>
+                                    <span class="badge ${badgeClass}">
+                                        ${ticket.priority === 0 ? 'High' : (ticket.priority === 1 ? 'Medium' : 'Low')}
+                                    </span>
+                                </small>
+                            </div>
+                            <p class="mb-1">${ticket.description}</p>
+                            <div class="d-flex justify-content-between">
+                                <small>From: ${ticket.userEmail}</small>
+                                <small>Submitted: ${formattedDate}</small>
+                            </div>
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-outline-secondary ticket-details-btn" 
+                                        data-ticket-id="${ticket.id}">
+                                    View Details
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger ticket-close-btn" 
+                                        data-ticket-id="${ticket.id}">
+                                    Close Ticket
+                                </button>
+                            </div>
+                            ${ticket.imageUrls && ticket.imageUrls.length > 0 ? `
+                                <div class="mt-2">
+                                    <button class="btn btn-sm btn-outline-info view-screenshots-btn" 
+                                            data-ticket-id="${ticket.id}" data-bs-toggle="modal" data-bs-target="#screenshotsModal">
+                                        View Screenshots (${ticket.imageUrls.length})
+                                    </button>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                });
+
+                $('#ticketsList').html(html);
+
+                // Attach event handlers to the new buttons
+                $('.ticket-close-btn').click(function() {
+                    var ticketId = $(this).data('ticket-id');
+                    closeTicket(ticketId);
+                });
+
+                $('.ticket-details-btn').click(function() {
+                    var ticketId = $(this).data('ticket-id');
+                    showTicketDetails(ticketId, tickets);
+                });
+
+                $('.view-screenshots-btn').click(function() {
+                    var ticketId = $(this).data('ticket-id');
+                    showScreenshots(ticketId, tickets);
+                });
+            }
+
+            // Show ticket details
+            function showTicketDetails(ticketId, tickets) {
+                var ticket = tickets.find(t => t.id === ticketId);
+                if (!ticket) {
+                    alert('Ticket not found!');
+                    return;
+                }
+
+                // Create a modal to show ticket details
+                var detailsHtml = `
+                    <div class="modal" id="ticketDetailsModal" tabindex="-1" aria-labelledby="ticketDetailsModalLabel" aria-hidden="true">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="ticketDetailsModalLabel">Ticket Details: ${ticket.title}</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <p><strong>ID:</strong> ${ticket.id}</p>
+                                    <p><strong>Title:</strong> ${ticket.title}</p>
+                                    <p><strong>Description:</strong> ${ticket.description}</p>
+                                    <p><strong>From:</strong> ${ticket.userEmail}</p>
+                                    <p><strong>Priority:</strong> ${ticket.priority === 0 ? 'High' : (ticket.priority === 1 ? 'Medium' : 'Low')}</p>
+                                    <p><strong>Status:</strong> ${ticket.status === 0 ? 'Open' : 'Closed'}</p>
+                                    <p><strong>Submitted:</strong> ${new Date(ticket.dateUploaded).toLocaleString()}</p>
+                                    
+                                    ${ticket.imageUrls && ticket.imageUrls.length > 0 ? `
+                                        <p><strong>Screenshots:</strong> ${ticket.imageUrls.length}</p>
+                                        <div>
+                                            <button class="btn btn-sm btn-outline-info" id="viewScreenshotsBtn">
+                                                View Screenshots
+                                            </button>
+                                        </div>
+                                    ` : '<p><strong>Screenshots:</strong> None</p>'}
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                    ${ticket.status === 0 ? `
+                                        <button type="button" class="btn btn-danger" id="modalCloseTicketBtn">Close Ticket</button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Remove any existing modal
+                $('#ticketDetailsModal').remove();
+
+                // Add the modal to the document
+                $('body').append(detailsHtml);
+
+                // Initialize the modal
+                var modal = new bootstrap.Modal(document.getElementById('ticketDetailsModal'));
+                modal.show();
+
+                // Attach event handlers
+                $('#modalCloseTicketBtn').click(function() {
+                    modal.hide();
+                    closeTicket(ticketId);
+                });
+
+                $('#viewScreenshotsBtn').click(function() {
+                    modal.hide();
+                    showScreenshots(ticketId, tickets);
+                });
+            }
+
+            // Show screenshots
+            function showScreenshots(ticketId, tickets) {
+                var ticket = tickets.find(t => t.id === ticketId);
+                if (!ticket || !ticket.imageUrls || ticket.imageUrls.length === 0) {
+                    alert('No screenshots found for this ticket!');
+                    return;
+                }
+
+                var screenshotsHtml = '';
+                ticket.imageUrls.forEach(function(url, index) {
+                    screenshotsHtml += `
+                        <div class="carousel-item ${index === 0 ? 'active' : ''}">
+                            <img src="${url}" class="d-block w-100" alt="Screenshot ${index + 1}">
+                        </div>
+                    `;
+                });
+
+                // Update modal content
+                $('#screenshotsCarouselInner').html(screenshotsHtml);
+                $('#screenshotsModalLabel').text(`Screenshots for ${ticket.title}`);
+
+                // Show the modal
+                var modal = new bootstrap.Modal(document.getElementById('screenshotsModal'));
+                modal.show();
+            }
+
             // Close ticket functionality
+            function closeTicket(ticketId) {
+                if (!confirm('Are you sure you want to close this ticket?')) {
+                    return;
+                }
+
+                $.ajax({
+                    url: '/api/technicians/tickets/' + ticketId + '/close',
+                    type: 'POST',
+                    success: function(data) {
+                        if (data.success) {
+                            alert('Ticket closed successfully!');
+                            // Reload tickets to refresh the list
+                            loadAllTickets();
+                            loadDashboard();
+                        } else {
+                            alert('Error: ' + data.error);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        alert('Error closing ticket: ' + (xhr.responseJSON?.error || error));
+                    }
+                });
+            }
+
+            // Existing close ticket functionality
             $('#closeTicketBtn').click(function() {
                 var ticketId = $('#ticketIdInput').val();
                 if (!ticketId) {
@@ -84,7 +414,7 @@
                     );
                     return;
                 }
-                
+
                 $.ajax({
                     url: '/api/tickets/' + ticketId + '/close',
                     type: 'POST',
@@ -92,26 +422,29 @@
                         $('#closeTicketResult').html(
                             '<div class="alert alert-success">' + data.message + '</div>'
                         );
+                        // Reload tickets to refresh the list
+                        loadAllTickets();
+                        loadDashboard();
                     },
-                    error: function(error) {
+                    error: function(xhr, status, error) {
                         $('#closeTicketResult').html(
-                            '<div class="alert alert-danger">Error: ' + 
-                            (error.responseJSON?.message || error.responseText || error.statusText) + 
+                            '<div class="alert alert-danger">Error: ' +
+                            (xhr.responseJSON?.error || xhr.responseText || error) +
                             '</div>'
                         );
                     }
                 });
             });
-            
+
             // Process tickets functionality
             $('#processTicketsBtn').click(function() {
                 // Show processing status
                 const resultDiv = $('#processingResult');
                 const messageSpan = $('#processingMessage');
-                
+
                 resultDiv.show();
                 messageSpan.text('Processing tickets...');
-                
+
                 // Call the processor endpoint
                 $.ajax({
                     url: '/api/processor/process-tickets',
@@ -119,18 +452,52 @@
                     contentType: 'application/json',
                     success: function(data) {
                         console.log('Success:', data);
-                        messageSpan.text('Tickets processed successfully! ' + 
-                                       (data.message ? data.message : JSON.stringify(data)));
+                        messageSpan.text('Tickets processed successfully! ' +
+                            (data.message ? data.message : JSON.stringify(data)));
                         resultDiv.find('.alert').removeClass('alert-info alert-danger').addClass('alert-success');
+
+                        // Reload tickets to show newly processed ones
+                        loadAllTickets();
+                        loadDashboard();
                     },
                     error: function(xhr, status, error) {
                         console.error('Error:', error);
-                        messageSpan.text('Error processing tickets: ' + 
-                                      (xhr.responseJSON?.error || xhr.responseText || error));
+                        messageSpan.text('Error processing tickets: ' +
+                            (xhr.responseJSON?.error || xhr.responseText || error));
                         resultDiv.find('.alert').removeClass('alert-info alert-success').addClass('alert-danger');
                     }
                 });
             });
         });
     </script>
-}
+
+<!-- Modal for viewing screenshots -->
+<div class="modal fade" id="screenshotsModal" tabindex="-1" aria-labelledby="screenshotsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="screenshotsModalLabel">Screenshots</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="screenshotsCarousel" class="carousel slide" data-bs-ride="carousel">
+                    <div class="carousel-inner" id="screenshotsCarouselInner">
+                        <!-- Will be filled dynamically -->
+                    </div>
+                    <button class="carousel-control-prev" type="button" data-bs-target="#screenshotsCarousel" data-bs-slide="prev">
+                        <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                        <span class="visually-hidden">Previous</span>
+                    </button>
+                    <button class="carousel-control-next" type="button" data-bs-target="#screenshotsCarousel" data-bs-slide="next">
+                        <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                        <span class="visually-hidden">Next</span>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+} 

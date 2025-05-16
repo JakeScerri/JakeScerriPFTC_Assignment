@@ -20,11 +20,303 @@
             <hr>
             
             <h4>My Tickets</h4>
-            <p>This would display a list of tickets submitted by the current user.</p>
+            <div class="d-flex justify-content-between mb-2">
+                <button id="refreshTicketsBtn" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh Tickets
+                </button>
+            </div>
+            <div id="userTicketsList" class="list-group">
+                <div class="text-center py-3">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading your tickets...</p>
+                </div>
+            </div>
             
-            <div id="userAreaResult" class="mt-3"></div>
+            <hr>
+            
+            <h4>Submit New Ticket</h4>
+            <form id="newTicketForm" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label for="ticketTitle" class="form-label">Title</label>
+                    <input type="text" class="form-control" id="ticketTitle" name="title" required>
+                </div>
+                <div class="mb-3">
+                    <label for="ticketDescription" class="form-label">Description</label>
+                    <textarea class="form-control" id="ticketDescription" name="description" rows="3" required></textarea>
+                </div>
+                <div class="mb-3">
+                    <label for="ticketPriority" class="form-label">Priority</label>
+                    <select class="form-select" id="ticketPriority" name="priority" required>
+                        <option value="0">High</option>
+                        <option value="1" selected>Medium</option>
+                        <option value="2">Low</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="ticketScreenshots" class="form-label">Screenshots (Optional)</label>
+                    <input class="form-control" type="file" id="ticketScreenshots" name="screenshots" multiple accept="image/*">
+                    <div class="progress mt-2" style="display: none;">
+                        <div class="progress-bar" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Submit Ticket</button>
+            </form>
+            
+            <div id="submitResult" class="mt-3"></div>
             
             <a href="/" class="btn btn-secondary mt-3">Back to Home</a>
         </div>
     </div>
 </div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            // Load user's tickets on page load
+            loadUserTickets();
+            
+            // Refresh tickets button
+            $('#refreshTicketsBtn').click(function() {
+                loadUserTickets();
+            });
+            
+            // Load user's tickets
+            function loadUserTickets() {
+                $('#userTicketsList').html(`
+                    <div class="text-center py-3">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading your tickets...</p>
+                    </div>
+                `);
+                
+                $.ajax({
+                    url: '/api/users/tickets',
+                    type: 'GET',
+                    success: function(data) {
+                        if (data.success) {
+                            displayTickets(data.tickets);
+                        } else {
+                            $('#userTicketsList').html(`
+                                <div class="alert alert-danger">
+                                    Error loading tickets: ${data.error || 'Unknown error'}
+                                </div>
+                            `);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        $('#userTicketsList').html(`
+                            <div class="alert alert-danger">
+                                Error loading tickets: ${xhr.responseJSON?.error || error}
+                            </div>
+                        `);
+                    }
+                });
+            }
+            
+            // Display tickets
+            function displayTickets(tickets) {
+                if (!tickets || tickets.length === 0) {
+                    $('#userTicketsList').html(`
+                        <div class="alert alert-info">
+                            You haven't submitted any tickets yet.
+                        </div>
+                    `);
+                    return;
+                }
+                
+                let html = '';
+                
+                tickets.forEach(function(ticket) {
+                    // Determine badge color based on priority
+                    let badgeClass = 'bg-secondary';
+                    if (ticket.priority === 0) badgeClass = 'bg-danger';
+                    if (ticket.priority === 1) badgeClass = 'bg-warning text-dark';
+                    if (ticket.priority === 2) badgeClass = 'bg-success';
+                    
+                    // Format date
+                    let date = new Date(ticket.dateUploaded);
+                    let formattedDate = date.toLocaleString();
+                    
+                    // Build ticket item HTML
+                    html += `
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h5 class="mb-1">${ticket.title}</h5>
+                                <small>
+                                    <span class="badge ${badgeClass}">
+                                        ${ticket.priority === 0 ? 'High' : (ticket.priority === 1 ? 'Medium' : 'Low')}
+                                    </span>
+                                </small>
+                            </div>
+                            <p class="mb-1">${ticket.description}</p>
+                            <div class="d-flex justify-content-between">
+                                <small>Status: ${ticket.status === 0 ? 'Open' : 'Closed'}</small>
+                                <small>Submitted: ${formattedDate}</small>
+                            </div>
+                            <div class="mt-2">
+                                ${ticket.status === 0 ? `
+                                    <button class="btn btn-sm btn-outline-danger ticket-close-btn" 
+                                            data-ticket-id="${ticket.id}">
+                                        Close Ticket
+                                    </button>
+                                ` : ''}
+                                ${ticket.imageUrls && ticket.imageUrls.length > 0 ? `
+                                    <button class="btn btn-sm btn-outline-secondary view-screenshots-btn" 
+                                            data-ticket-id="${ticket.id}" data-bs-toggle="modal" data-bs-target="#screenshotsModal">
+                                        View Screenshots (${ticket.imageUrls.length})
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                $('#userTicketsList').html(html);
+                
+                // Attach event handlers to the buttons
+                $('.ticket-close-btn').click(function() {
+                    var ticketId = $(this).data('ticket-id');
+                    closeTicket(ticketId);
+                });
+                
+                $('.view-screenshots-btn').click(function() {
+                    var ticketId = $(this).data('ticket-id');
+                    var ticket = tickets.find(t => t.id === ticketId);
+                    
+                    if (ticket && ticket.imageUrls && ticket.imageUrls.length > 0) {
+                        var screenshotsHtml = '';
+                        ticket.imageUrls.forEach(function(url, index) {
+                            screenshotsHtml += `
+                                <div class="carousel-item ${index === 0 ? 'active' : ''}">
+                                    <img src="${url}" class="d-block w-100" alt="Screenshot ${index + 1}">
+                                </div>
+                            `;
+                        });
+                        
+                        // Update modal content
+                        $('#screenshotsCarouselInner').html(screenshotsHtml);
+                        $('#screenshotsModalLabel').text(`Screenshots for ${ticket.title}`);
+                        
+                        // Show the modal
+                        var modal = new bootstrap.Modal(document.getElementById('screenshotsModal'));
+                        modal.show();
+                    }
+                });
+            }
+            
+            // Close ticket function
+            function closeTicket(ticketId) {
+                if (!confirm('Are you sure you want to close this ticket?')) {
+                    return;
+                }
+                
+                $.ajax({
+                    url: '/api/users/tickets/' + ticketId + '/close',
+                    type: 'POST',
+                    success: function(data) {
+                        if (data.success) {
+                            alert('Ticket closed successfully!');
+                            loadUserTickets(); // Refresh the list
+                        } else {
+                            alert('Error: ' + data.error);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        alert('Error closing ticket: ' + (xhr.responseJSON?.error || error));
+                    }
+                });
+            }
+            
+            // Submit new ticket
+            $('#newTicketForm').submit(function(e) {
+                e.preventDefault();
+                
+                // Create FormData object for file uploads
+                var formData = new FormData(this);
+                
+                // Show progress bar
+                var progressBar = $(this).find('.progress');
+                var progressBarInner = progressBar.find('.progress-bar');
+                progressBar.show();
+                progressBarInner.width('0%');
+                progressBarInner.text('0%');
+                
+                $.ajax({
+                    url: '/api/tickets',
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    xhr: function() {
+                        var xhr = new window.XMLHttpRequest();
+                        xhr.upload.addEventListener('progress', function(evt) {
+                            if (evt.lengthComputable) {
+                                var percentComplete = evt.loaded / evt.total * 100;
+                                progressBarInner.width(percentComplete + '%');
+                                progressBarInner.text(Math.round(percentComplete) + '%');
+                            }
+                        }, false);
+                        return xhr;
+                    },
+                    success: function(data) {
+                        // Reset form
+                        $('#newTicketForm')[0].reset();
+                        progressBar.hide();
+                        
+                        // Show success message
+                        $('#submitResult').html(`
+                            <div class="alert alert-success">
+                                ${data.message || 'Ticket submitted successfully!'}
+                            </div>
+                        `);
+                        
+                        // Reload tickets
+                        loadUserTickets();
+                    },
+                    error: function(xhr, status, error) {
+                        progressBar.hide();
+                        $('#submitResult').html(`
+                            <div class="alert alert-danger">
+                                Error submitting ticket: ${xhr.responseJSON?.error || error}
+                            </div>
+                        `);
+                    }
+                });
+            });
+        });
+    </script>
+    
+    <!-- Modal for viewing screenshots -->
+    <div class="modal fade" id="screenshotsModal" tabindex="-1" aria-labelledby="screenshotsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="screenshotsModalLabel">Screenshots</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="screenshotsCarousel" class="carousel slide" data-bs-ride="carousel">
+                        <div class="carousel-inner" id="screenshotsCarouselInner">
+                            <!-- Will be filled dynamically -->
+                        </div>
+                        <button class="carousel-control-prev" type="button" data-bs-target="#screenshotsCarousel" data-bs-slide="prev">
+                            <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                            <span class="visually-hidden">Previous</span>
+                        </button>
+                        <button class="carousel-control-next" type="button" data-bs-target="#screenshotsCarousel" data-bs-slide="next">
+                            <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                            <span class="visually-hidden">Next</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}

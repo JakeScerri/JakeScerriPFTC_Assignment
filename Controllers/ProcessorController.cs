@@ -59,13 +59,13 @@ namespace JakeScerriPFTC_Assignment.Controllers
             try
             {
                 _logger.LogInformation("Manual ticket processing triggered at {Time}", DateTime.UtcNow);
-                
+        
                 var result = await _ticketProcessorService.ProcessTicketsAsync();
-                
+        
                 _logger.LogInformation("Manual ticket processing completed successfully");
                 return Ok(new { 
                     success = true, 
-                    message = "Ticket processing completed successfully",
+                    message = "Ticket processing completed successfully. Email notifications sent for any pending tickets.",
                     timestamp = DateTime.UtcNow
                 });
             }
@@ -116,5 +116,6 @@ namespace JakeScerriPFTC_Assignment.Controllers
                 });
             }
         }
+        
     }
 }

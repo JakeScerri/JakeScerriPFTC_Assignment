@@ -1,0 +1,13 @@
+REM Build your Docker image with a consistent tag
+docker build -t gcr.io/pftc-jake/ticket-system:latest .
+
+REM Push the image to Google Container Registry
+docker push gcr.io/pftc-jake/ticket-system:latest
+
+REM Deploy a new revision to the existing service with the same name
+gcloud run deploy ticket-system ^
+  --image gcr.io/pftc-jake/ticket-system:latest ^
+  --platform managed ^
+  --region europe-west1 ^
+  --project pftc-jake ^
+  --allow-unauthenticated

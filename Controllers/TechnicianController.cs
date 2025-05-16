@@ -17,15 +17,18 @@ namespace JakeScerriPFTC_Assignment.Controllers
     {
         private readonly FirestoreService _firestoreService;
         private readonly RedisService _redisService;
+        private readonly PubSubService _pubSubService;
         private readonly ILogger<TechniciansController> _logger;
 
         public TechniciansController(
             FirestoreService firestoreService, 
             RedisService redisService,
+            PubSubService pubSubService,
             ILogger<TechniciansController> logger)
         {
             _firestoreService = firestoreService;
             _redisService = redisService;
+            _pubSubService = pubSubService;
             _logger = logger;
         }
 
@@ -57,7 +60,7 @@ namespace JakeScerriPFTC_Assignment.Controllers
             }
         }
 
-        [HttpGet("tickets/priority/{priority}")]
+       [HttpGet("tickets/priority/{priority}")]
         public async Task<IActionResult> GetTicketsByPriority(string priority)
         {
             try
@@ -103,10 +106,31 @@ namespace JakeScerriPFTC_Assignment.Controllers
                 string technicianEmail = User.FindFirstValue(ClaimTypes.Email);
                 _logger.LogInformation($"Technician {technicianEmail} closing ticket {id}");
                 
+                // Get the ticket from Redis
+                var ticket = await _redisService.GetTicketAsync(id);
+                if (ticket == null)
+                {
+                    return NotFound(new { 
+                        success = false, 
+                        error = $"Ticket {id} not found" 
+                    });
+                }
+                
                 // Close the ticket in Redis
                 await _redisService.CloseTicketAsync(id, technicianEmail);
                 
-                _logger.LogInformation($"Ticket {id} closed by {technicianEmail}");
+                // Check if ticket is more than a week old
+                if ((DateTime.UtcNow - ticket.DateUploaded).TotalDays > 7)
+                {
+                    // Archive to Firestore
+                    await _firestoreService.ArchiveTicketAsync(ticket, technicianEmail);
+                    _logger.LogInformation($"Ticket {id} archived to Firestore (older than 1 week)");
+                }
+                
+                // Acknowledge in PubSub to remove the message
+                await _pubSubService.AcknowledgeTicketAsync(id, ticket.Priority);
+                
+                _logger.LogInformation($"Ticket {id} closed by {technicianEmail} and acknowledged in PubSub");
                 
                 return Ok(new { 
                     success = true,
@@ -159,8 +183,5 @@ namespace JakeScerriPFTC_Assignment.Controllers
                 });
             }
         }
-        
-        
     }
-    
-}
+} 
